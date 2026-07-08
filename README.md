@@ -11,8 +11,8 @@ This repository contains the code to reproduce the analyses in the publication: 
 ## Installation
 
 ```bash
-git clone https://github.com/username/repository.git
-cd repository
+git clone https://github.com/barentroia/onco_cSCC_genomic_characterization.git
+cd onco_cSCC_genomic_characterization
 ```
 
 ## Usage
