@@ -1,4 +1,4 @@
-# UCSF_WES_CSCC
+# Genomic and transcriptomic landscape of cutaneous squamous cell carcinoma
 
 ## Overview 
 This repository contains the code to reproduce the analyses in the publication: Comprehensive molecular characterization of cutaneous squamous cell carcinoma reveals determinants of metastatic progression.
