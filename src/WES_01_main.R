@@ -1,21 +1,24 @@
 #---------------------------------------------------
-# Aim: Master script to generate figures and tables
+# Aim: Master script to generate figures and tables concerning the WES analyses
 # Author: B. Rentroia Pacheco
 # Input: Mutect2, CNV analyses from DNAnexus, compiled clinical set
-# Output: Figures and Table for publication
+# Output: Figures and Tables in the publication
 #---------------------------------------------------
 
 #---------------------------------------------------
 # 0. Libraries
 #---------------------------------------------------
-dir_scripts = file.path("T:","Barbara","WES_analyses","Publication","UCSF_WES_CSCC")
-source(file.path(dir_scripts,"Pub_00_required_libraries.R"))
-
+dir_repo = file.path("T:","Barbara","WES_analyses","Publication") #Fill in with the directory where github repo is stored
+dir_scripts = file.path(dir_repo,"src") 
+dir_results =file.path(dir_repo,"results")
+#---------------------------------------------------
 
 #---------------------------------------------------
-# 1. Directories
+# 1. Load required libraries
 #---------------------------------------------------
-dir_results =file.path("T:","Barbara","WES_analyses","Publication")
+source(file.path(dir_scripts,"WES_00_required_libraries.R"))
+#---------------------------------------------------
+
 #---------------------------------------------------
 # 2. Assembling clinical information and manual inspection information
 #---------------------------------------------------
@@ -113,21 +116,21 @@ sample_summary_total$Pt_ID =  gsub("[A-Za-z]", "",sample_summary_total$Full_Samp
 
 # Patient characteristics table:
 dir_results_script = file.path(dir_results,"00_Pat_Tumor_characteristics")
-#source(file.path(dir_scripts,"04_Publication_scripts","04_00_01_Pat_Tum_characteristics_table.R"))
+#source(file.path(dir_scripts,"src","wes","04_00_01_Pat_Tum_characteristics_table.R"))
 
 # Preprocess meta-analysis cohort, so that it is compatible with our dataframes:
-#source(file.path(dir_scripts,"04_Publication_scripts","04_00_03_Meta_analysis_cohort_preprocessing.R"))
+#source(file.path(dir_scripts,"src","wes","04_00_03_Meta_analysis_cohort_preprocessing.R"))
 
 # Figure 1:
 # Mutation burden - plots:
 dir_results_script = file.path(dir_results,"01_Mutations_summary",IS_classification)
-#source(file.path(dir_scripts,"04_Publication_scripts","04_01_01_MML_summaries.R"))
-source(file.path(dir_scripts,"04_Publication_scripts","04_01_A2_MML_tumor_in_normal_contamination_figures.R"))
+#source(file.path(dir_scripts,"src","wes","04_01_01_MML_summaries.R"))
+source(file.path(dir_scripts,"src","wes","04_01_A2_MML_tumor_in_normal_contamination_figures.R"))
 
 # Mutational signature plot:
 dir_results_script = file.path(dir_results,"02_Mutational_signatures")
 dir.create(dir_results_script)
-source(file.path(dir_scripts,"04_Publication_scripts","04_01_02_MML_Mutational_signatures.R"))
+source(file.path(dir_scripts,"src","wes","04_01_02_MML_Mutational_signatures.R"))
 
 # New classification of immunosuppressed patients:
 IS_classification = "IS.at.cSCC.updatedS32"
@@ -136,16 +139,16 @@ pts_with_SBS_32=read.csv(file.path(dir_results_script,"Data","SigProfilerAssignm
 # Repeat previous points with new classification of immunosuppressed patients:
 dir_results_script = file.path(dir_results,"01_Mutations_summary",IS_classification)
 sample_summary$IS.at.cSCC.updatedS32 = ifelse(sample_summary$Sample.ID%in%gsub("S","",pts_with_SBS_32),"Yes",sample_summary$IS.at.cSCC)
-#source(file.path(dir_scripts,"04_Publication_scripts","04_01_01_MML_summaries.R"))
+#source(file.path(dir_scripts,"src","wes","04_01_01_MML_summaries.R"))
 dir_results_script = file.path(dir_results,"02_Mutational_signatures")
-#source(file.path(dir_scripts,"04_Publication_scripts","04_01_02_MML_Mutational_signatures.R"))
+#source(file.path(dir_scripts,"src","wes","04_01_02_MML_Mutational_signatures.R"))
 
 # Cancer Gene Analyses - Figure 2:
 dir_results_script = file.path(dir_results,"03_Cancer_gene_analysis")
 dir.create(dir_results_script)
 dir_results_script = file.path(dir_results,"03_Cancer_gene_analysis",IS_classification)
 dir.create(dir_results_script)
-#source(file.path(dir_scripts,"04_Publication_scripts","04_02_01_Intogen.R")) # To run intogen in server
+#source(file.path(dir_scripts,"src","wes","04_02_01_Intogen.R")) # To run intogen in server
 
 # Revision of intogen results for pathogenic calls:
 if(exclusion_callable_coverage & rescued_mutations){
@@ -158,7 +161,7 @@ if(exclusion_callable_coverage & rescued_mutations){
 # Copy number alterations:
 dir_results_script = file.path(dir_results,"04_CNV")
 dir.create(dir_results_script)
-source(file.path(dir_scripts,"04_Publication_scripts","04_02_02_CNV.R")) 
+source(file.path(dir_scripts,"src","wes","04_02_02_CNV.R")) 
 
 # Tileplot:
 # Add copy number alterations to the sample summary:
@@ -167,30 +170,30 @@ dir_results_script = file.path(dir_results,"05_Tileplot")
 dir.create(dir_results_script)
 dir_results_script = file.path(dir_results,"05_Tileplot",IS_classification)
 dir.create(dir_results_script)
-source(file.path(dir_scripts,"04_Publication_scripts","04_02_03_Tileplot.R")) 
+source(file.path(dir_scripts,"src","wes","04_02_03_Tileplot.R")) 
 
 # Forest plots:
 dir_results_script = file.path(dir_results,"06_Forest_plots")
 dir.create(dir_results_script)
 # Driver genes and copy number forest plots:
-source(file.path(dir_scripts,"04_Publication_scripts","04_02_03_Driver_mutations_differences.R"))
+source(file.path(dir_scripts,"src","wes","04_02_03_Driver_mutations_differences.R"))
 # Supplementary Figure: IS patients:
-source(file.path(dir_scripts,"04_Publication_scripts","04_02_04_Forest_plots_IS.R"))
+source(file.path(dir_scripts,"src","wes","04_02_04_Forest_plots_IS.R"))
 
 # Co-occurence analysis: 
 dir_results_script = file.path(dir_results,"05_Tileplot",IS_classification)
-source(file.path(dir_scripts,"04_Publication_scripts","04_02_03_Co_occurrence_analysis.R")) 
+source(file.path(dir_scripts,"src","wes","04_02_03_Co_occurrence_analysis.R")) 
 
 # Analysis of all alterations together:
 dir_results_script = file.path(dir_results,"07_Bootstrapping")
 dir.create(dir_results_script)
 recompute_BS = FALSE
-source(file.path(dir_scripts,"04_Publication_scripts","04_03_02_Bootstrapping.R")) 
+source(file.path(dir_scripts,"src","wes","04_03_02_Bootstrapping.R")) 
 
 # Integrate driver mutations with genomic clusters:
 dir_results_script = file.path(dir_results,"08_RNAseq_integration")
 dir.create(dir_results_script)
-source(file.path(dir_scripts,"04_Publication_scripts","04_04_Integration.R"))
+source(file.path(dir_scripts,"src","wes","04_04_Integration.R"))
 
 # Save sample summary with extra information:
-source(file.path(dir_scripts,"04_Publication_scripts","05_01_01_Sample_Summary.R"))
+source(file.path(dir_scripts,"src","wes","05_01_01_Sample_Summary.R"))
