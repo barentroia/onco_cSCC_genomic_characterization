@@ -28,19 +28,19 @@ source("RNASeq_01_main.R")
 ## Structure and scripts description
 ```
 |
-└── src                                                                      <- Folder with code to reproduce the analyses in the manuscript and regenerate figures and tables
+└── src                                  <- Folder with code to reproduce the analyses in the manuscript and regenerate figures and tables
     |
-    ├── clinical/                                                            <- Folder with scripts to run multiple imputation in D-SQUAME discovery and validation datasets and calculate inverse sampling probability weights.
-    ├── functions                                                            <- Folder with functions re-used in many scripts 
-    ├── integration                                                          <- Folder with scripts to run analysis on samples with both GEP and WES, for SFigure 11
-    ├── sccore_gep                                                           <- Folder with scripts to run analyses and generate figures/tables related to SCCore-GEP development.
-    ├── single_cell_spatial                                                  <- Folder with scripts to run spatial transcriptomics analyses
-    ├── rna_seq                                                              <- Folder with analyses on rna-seq data (clustering and differential gene expression)
-    └── validation/                                                          <- Folder with scripts to run analyses and generate figures/tables for related to SCCore-GEP validation analyses.
-    ├── RNASeq_00_config.R                                                   <- Script with configurations and filenames to run all analyses on RNA-seq data
-    ├── WES_00_required_libraries.R                                          <- Script with configurations and filenames to run all analyses on WES data
-    ├── RNASeq_01_main.R                                                     <- Main script to run all analyses on RNA-seq data
-    ├── WES_01_main.R                                                        <- Main script to run all analyses on WES data
+    ├── clinical/                        <- Folder with scripts to run multiple imputation in D-SQUAME discovery and validation datasets and calculate inverse sampling probability weights.
+    ├── functions                        <- Folder with functions re-used in many scripts 
+    ├── integration                      <- Folder with scripts to run analysis on samples with both GEP and WES, for SFigure 11
+    ├── sccore_gep                       <- Folder with scripts to run analyses and generate figures/tables related to SCCore-GEP development.
+    ├── single_cell_spatial              <- Folder with scripts to run spatial transcriptomics analyses
+    ├── rna_seq                          <- Folder with analyses on rna-seq data (clustering and differential gene expression)
+    └── validation/                      <- Folder with scripts to run analyses and generate figures/tables for related to SCCore-GEP validation analyses.
+    ├── RNASeq_00_config.R               <- Script with configurations and filenames to run all analyses on RNA-seq data
+    ├── WES_00_required_libraries.R      <- Script with configurations and filenames to run all analyses on WES data
+    ├── RNASeq_01_main.R                 <- Main script to run all analyses on RNA-seq data
+    ├── WES_01_main.R                    <- Main script to run all analyses on WES data
 
 ```
 ## Data Availability
