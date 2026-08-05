@@ -181,6 +181,8 @@ source(file.path(code_dir, "validation", "d_squame", "figures", "supp_figure_14b
 #-------------------------------------------------------------------------------
 # Generate DEGs on the discovery data set (N=378)
 source(file.path(code_dir,"rna_seq","analyses","DGEA_discovery.R"))
+# Generate clustering results:
+source(file.path(code_dir,"rna_seq","figures","rna_seq_02_clusters_visualization_interpretation.R"))
 # Heatmap discovery and validation data sets
 source(file.path(code_dir,"rna_seq","figures","figure_5a_heatmap_discovery.R"))
 source(file.path(code_dir,"rna_seq","figures","supp_figure_12a_heatmaps_validation.R"))

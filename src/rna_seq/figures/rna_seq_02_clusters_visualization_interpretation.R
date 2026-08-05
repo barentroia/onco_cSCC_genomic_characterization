@@ -7,32 +7,35 @@
 
 # Setup - Load libraries & define output directory
 #-------------------------------------------------------------------------------
-library(cola)
-library(openxlsx)
-library(plyr)
-library(dplyr)
-library(DESeq2)
-library(clusterProfiler)
-library(msigdbr)
-library(tibble)
-library(rtracklayer)
-library(fgsea)
-library(biomaRt)
-library(pheatmap)
-library(ggplot2)
-library(ggalluvial)
-library(officer)
-library(patchwork)
-library(survival)
-library(survminer)
-library(gtsummary)
+#library(cola)
+#library(openxlsx)
+#library(plyr)
+#library(dplyr)
+#library(DESeq2)
+#library(clusterProfiler)
+#library(msigdbr)
+#library(tibble)
+#library(rtracklayer)
+#library(fgsea)
+#library(biomaRt)
+#library(pheatmap)
+#library(ggplot2)
+#library(ggalluvial)
+#library(officer)
+#library(patchwork)
+#library(survival)
+#library(survminer)
+#library(gtsummary)
 
 # If running this script by itself, run config.R to define file paths
 # Load useful functions:
 
 # Output directory:
 output_dir <- file.path(results_dir,"rna_seq","clustering_cola")
+
+# Cluster discovery step:
 source(file.path(code_dir,"functions","rnaseq_cluster_interpretation.R"))
+source(file.path(code_dir,"rna_seq","analyses","rna_seq_01_clustering_analyses.R"))
 
 # Use data from WES:
 genomic_df = read.xlsx("/home/cscc_project_230717/brentroia/data/S04_02_03_genomic_df_summary.xlsx")
@@ -66,7 +69,7 @@ df_clusters<- df_cola_cl %>%
 # Preprocess clinical and rnaseq datasets: 
 #-------------------------------------------------------------------------------
 # This can be omitted if running this script after rna_seq_01_clustering_analyses.R
-source(file.path(code_dir,"rna_seq","rna_seq_a1_preprocessing.R"))
+source(file.path(code_dir,"rna_seq","analyses","rna_seq_a1_preprocessing.R"))
 #-------------------------------------------------------------------------------
 
 # Cluster annotations:

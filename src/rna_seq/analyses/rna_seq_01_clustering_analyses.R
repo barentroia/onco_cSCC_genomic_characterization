@@ -8,11 +8,11 @@
 # Setup - Load libraries & define output directory
 #-------------------------------------------------------------------------------
 # Libraries
-library(cola)
-library(openxlsx)
-library(plyr)
-library(dplyr)
-library(DESeq2)
+#library(cola)
+#library(openxlsx)
+#library(plyr)
+#library(dplyr)
+#library(DESeq2)
 
 # If running this script by itself, run config.R to define file paths
 
@@ -23,7 +23,7 @@ if (!dir.exists(output_dir)){dir.create(output_dir, recursive = T)}
 
 # Preprocess clinical and rnaseq datasets 
 #-------------------------------------------------------------------------------
-source(file.path(code_dir,"rna_seq","rna_seq_a1_preprocessing.R"))
+source(file.path(code_dir,"rna_seq","analyses","rna_seq_a1_preprocessing.R"))
 #-------------------------------------------------------------------------------
 
 # Generate input matrices for clustering and annotations:
