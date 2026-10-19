@@ -111,7 +111,7 @@ p_boxplot_mets_groups = ggplot(sample_summary_plot,
   theme_bw(base_size = 18)+
   stat_compare_means(comparisons = my_comparisons_2gr_mets,
                      method = "wilcox.test",
-                     label = "p.format") +ylim(c(0,270))
+                     label = "p.format") +coord_cartesian(ylim=c(0,270))
 ggsave(file.path(dir_results_script,"S04_01_01_01_A1_Boxplot_Mutation_burden_2gr_Mets.pdf"),p_boxplot_mets_groups,width=5,height=6)
 ggsave(file.path(dir_results_script,"S04_01_01_01_A1_Boxplot_Mutation_burden_2gr_Mets.png"),p_boxplot_mets_groups,width=5,height=6)
 
@@ -128,7 +128,7 @@ p_boxplot_IS_groups = ggplot(sample_summary_plot,
   geom_jitter(width = 0.2, alpha = 0.8, size = 1) +
   #scale_fill_manual(values = group_colors_IS,name = "Immunocompromised" ) +
   labs(y = "Mutation Burden (Mut/Mb)", x = NULL) +
-  theme_bw(base_size = 18) +ylim(c(0,270))
+  theme_bw(base_size = 18) +coord_cartesian(ylim=c(0,270))
 
 
 # 4 groups:
