@@ -134,56 +134,57 @@ pre_filtering = function(df,cutoff_mut,auxilliary_vars,remove_sex){
 }
 
 # Assessment of different pre-filtring approaches:
+n_boot=200
 if(recompute_BS){
-  for (ct_cnv_freq in c(9,25,27)){
+  for (ct_cnv_freq in c(27)){
     dir_results_script_cutoff = file.path(dir_results_script,paste0("CNV_freq_cutoff",as.character(ct_cnv_freq)))
     pre_processing_dfs = pre_filtering(input_df,c(2,ct_cnv_freq),auxilliary_vars,TRUE)
     x = pre_processing_dfs[["x"]]
     y = pre_processing_dfs[["y"]]
     
     model_list <- list(
-      coxnet_a1 = list(method="coxnet","s" = "lambda.1se", "alpha" = 1, "fsel"="none"),
-      coxnet_a1_fsel02 = list(method="coxnet","s" = "lambda.1se", "alpha" = 1, "fsel"="cox","p_thresh"=0.2),
-      coxnet_a05 = list(method="coxnet","s" = "lambda.1se", "alpha" = 0.5, "fsel"="none"),
-      coxnet_a05_fsel02 = list(method="coxnet","s" = "lambda.1se", "alpha" = 0.5, "fsel"="cox","p_thresh"=0.2),
-      coxnet_02 = list(method="coxnet","s" = "lambda.1se", "alpha" = 0.2, "fsel"="none"),
-      coxnet_a02_fsel02 = list(method="coxnet","s" = "lambda.1se", "alpha" = 0.2, "fsel"="cox","p_thresh"=0.2),
-      onco_score = list(method="Onco_score","fsel"="cox","p_thresh"=0.1),
-      onco_score_02 = list(method="Onco_score","fsel"="cox","p_thresh"=0.2))
+      #coxnet_a1 = list(method="coxnet","s" = "lambda.1se", "alpha" = 1, "fsel"="none"),
+      #coxnet_a1_fsel02 = list(method="coxnet","s" = "lambda.1se", "alpha" = 1, "fsel"="cox","p_thresh"=0.2),
+      coxnet_a05 = list(method="coxnet","s" = "lambda.1se", "alpha" = 0.5, "fsel"="none"))
+      #coxnet_a05_fsel02 = list(method="coxnet","s" = "lambda.1se", "alpha" = 0.5, "fsel"="cox","p_thresh"=0.2),
+      #coxnet_02 = list(method="coxnet","s" = "lambda.1se", "alpha" = 0.2, "fsel"="none"),
+      #coxnet_a02_fsel02 = list(method="coxnet","s" = "lambda.1se", "alpha" = 0.2, "fsel"="cox","p_thresh"=0.2),
+      #onco_score = list(method="Onco_score","fsel"="cox","p_thresh"=0.1),
+      #onco_score_02 = list(method="Onco_score","fsel"="cox","p_thresh"=0.2))
     
     list_x = list("Genes_Pathways_CNV"=x)
-    final_results_filtering <- run_bootstrap_all_models(list_x, y, model_list, n_boot = 100, outdir = dir_results_script_cutoff)
+    final_results_filtering <- run_bootstrap_all_models(list_x, y, model_list, n_boot = n_boot, outdir = dir_results_script_cutoff)
     saveRDS(final_results_filtering, file.path(dir_results_script_cutoff,"final_results_differentfiltering.RDS"))
     
   }
   
   # Check genetic algorithms:
-  if(ct_cnv_freq==27){
-    model_list <- list(
-      coxnet_a05_fsel02 = list(method="coxnet","s" = "lambda.1se", "alpha" = 0.5, "fsel"="cox","p_thresh"=0.2),
-      onco_score = list(method="Onco_score","fsel"="cox","p_thresh"=0.1),
-      onco_score_02 = list(method="Onco_score","fsel"="cox","p_thresh"=0.2),
-      onco_score_GA_no_val_noFPen_02 = list(method="Onco_score","fsel"="GA","GA.val"=FALSE,"GA.feat_penalty"=FALSE,"p_thresh"=0.2),
-      onco_score_GA_no_val_wFPen_02 = list(method="Onco_score","fsel"="GA","GA.val"=FALSE,"GA.feat_penalty"=TRUE,"p_thresh"=0.2),
-      onco_score_GA_with_val_noFPen_02 = list(method="Onco_score","fsel"="GA","GA.val"=TRUE,"GA.feat_penalty"=FALSE,"p_thresh"=0.2),
-      onco_score_GA_with_val_wFPen_02 = list(method="Onco_score","fsel"="GA","GA.val"=TRUE,"GA.feat_penalty"=TRUE,"p_thresh"=0.2)
-    )
-    list_x = list("Genes_Pathways_CNV"=x)
-    final_results_2 <- run_bootstrap_all_models(list_x, y, model_list, n_boot = 20, outdir = file.path(dir_results_script_cutoff,"GAs"))
-    saveRDS(final_results_2 , file.path(dir_results_script_cutoff,"GAs","final_results_GA.RDS"))
+  #if(ct_cnv_freq==27){
+  #  model_list <- list(
+  #    coxnet_a05_fsel02 = list(method="coxnet","s" = "lambda.1se", "alpha" = 0.5, "fsel"="cox","p_thresh"=0.2),
+  #    onco_score = list(method="Onco_score","fsel"="cox","p_thresh"=0.1),
+  #    onco_score_02 = list(method="Onco_score","fsel"="cox","p_thresh"=0.2),
+  #    onco_score_GA_no_val_noFPen_02 = list(method="Onco_score","fsel"="GA","GA.val"=FALSE,"GA.feat_penalty"=FALSE,"p_thresh"=0.2),
+  #    onco_score_GA_no_val_wFPen_02 = list(method="Onco_score","fsel"="GA","GA.val"=FALSE,"GA.feat_penalty"=TRUE,"p_thresh"=0.2),
+  #    onco_score_GA_with_val_noFPen_02 = list(method="Onco_score","fsel"="GA","GA.val"=TRUE,"GA.feat_penalty"=FALSE,"p_thresh"=0.2),
+  #    onco_score_GA_with_val_wFPen_02 = list(method="Onco_score","fsel"="GA","GA.val"=TRUE,"GA.feat_penalty"=TRUE,"p_thresh"=0.2)
+  #  )
+  #  list_x = list("Genes_Pathways_CNV"=x)
+  #  final_results_2 <- run_bootstrap_all_models(list_x, y, model_list, n_boot = n_boot, outdir = file.path(dir_results_script_cutoff,"GAs"))
+  #  saveRDS(final_results_2 , file.path(dir_results_script_cutoff,"GAs","final_results_GA.RDS"))
     
-  }
+  #}
   
   # Check RForests:
-  model_list <- list(
-    coxnet_a05 = list(method="coxnet","s" = "lambda.1se", "alpha" = 0.5, "fsel"="none"),
-    coxnet_a05_fsel02 = list(method="coxnet","s" = "lambda.1se", "alpha" = 0.5, "fsel"="cox","p_thresh"=0.2),
-    onco_score = list(method="Onco_score","fsel"="cox","p_thresh"=0.1),
-    onco_score_02 = list(method="Onco_score","fsel"="cox","p_thresh"=0.2),
-    rsf_fsel_02 = list(method="rsf","num.trees" = 1000, "max.depth" = 4, "fsel"="cox","p_thresh"=0.2))
-  list_x = list("Genes_Pathways_CNV"=x)
-  final_results_3 <- run_bootstrap_all_models(list_x, y, model_list, n_boot = 100, outdir = file.path(dir_results_script_cutoff,"RFs"))
-  saveRDS(final_results_3 , file.path(dir_results_script_cutoff,"RFs","final_results_RF.RDS"))
+  #model_list <- list(
+  #  coxnet_a05 = list(method="coxnet","s" = "lambda.1se", "alpha" = 0.5, "fsel"="none"),
+  #  coxnet_a05_fsel02 = list(method="coxnet","s" = "lambda.1se", "alpha" = 0.5, "fsel"="cox","p_thresh"=0.2),
+  #  onco_score = list(method="Onco_score","fsel"="cox","p_thresh"=0.1),
+  #  onco_score_02 = list(method="Onco_score","fsel"="cox","p_thresh"=0.2),
+  #  rsf_fsel_02 = list(method="rsf","num.trees" = 1000, "max.depth" = 4, "fsel"="cox","p_thresh"=0.2))
+  #list_x = list("Genes_Pathways_CNV"=x)
+  #final_results_3 <- run_bootstrap_all_models(list_x, y, model_list, n_boot = n_boot, outdir = file.path(dir_results_script_cutoff,"RFs"))
+  #saveRDS(final_results_3 , file.path(dir_results_script_cutoff,"RFs","final_results_RF.RDS"))
   
 }
 dir_results_script_cutoff = file.path(dir_results_script,paste0("CNV_freq_cutoff",as.character(27)))
@@ -253,7 +254,6 @@ write.xlsx(one_off_coxnet_coeffs,file.path(dir_results_script_cutoff,"Final_mode
 # Chosen model:
 chosen_model = "Genes_Pathways_CNV_coxnet_a05"
 freq = final_results_filtering$results[[chosen_model]]$gene_selection_freq
-n_boot=200
 cutoff=0
 # Performance:
 # AJCC/BWH/CP_model
