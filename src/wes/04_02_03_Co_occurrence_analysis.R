@@ -81,7 +81,7 @@ generate_co_occur_mat = function(df,gene_subset,cutoff_genes,mega_MML = FALSE,al
         data.frame(
           Gene1 = pair[1],
           Gene2 = pair[2],
-          OddsRatio = ifelse(is.finite(test$estimate), test$estimate, NA),
+          OddsRatio = test$estimate,
           p.value = test$p.value
         )
       }else {
@@ -131,7 +131,7 @@ generate_co_occur_mat = function(df,gene_subset,cutoff_genes,mega_MML = FALSE,al
       data.frame(
         Gene1 = pair[1],
         Gene2 = pair[2],
-        OddsRatio = ifelse(is.finite(test$estimate), test$estimate, NA),
+        OddsRatio = test$estimate,
         p.value = test$p.value
       )
     } else {
@@ -149,7 +149,7 @@ generate_co_occur_mat = function(df,gene_subset,cutoff_genes,mega_MML = FALSE,al
   results_df_wself = rbind(results_df, results_df_self)%>%
     mutate(
       logOR = log2(OddsRatio),
-      logOR = ifelse(is.infinite(logOR),5,logOR),
+      logOR = ifelse(is.infinite(logOR), sign(logOR) * 5, logOR),
       logOR = ifelse(is.nan(logOR), NA, logOR))
   
   # Create symmetric logOR and FDR matrices
