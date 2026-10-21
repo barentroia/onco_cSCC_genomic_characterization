@@ -358,10 +358,11 @@ bootstrap_model <- function(x, y, model_method, n_boot = 100, params = list(),sa
     model_training <- build_model(x, y, model_method,seed = app_seed+1000, params = params)
     app_seed=app_seed+1
   }
-  
-  C_apparent <- survival::concordance(y ~ model_training$surv_prob)$concordance
+  surv_app   <- apply_model(x, model_training, model_method, params = params)
+  #C_apparent <- survival::concordance(y ~ model_training$surv_prob)$concordance
+  C_apparent <- survival::concordance(y ~ surv_app)$concordance
   cat("Apparent C-index:", round(C_apparent, 3), "\n")
-  
+  cat(survival::concordance(y ~ model_training$surv_prob)$concordance)
   # Calcualte C_no_info:
   n_perm <- 100
   C_noinfo_vec <- numeric(n_perm)
@@ -434,12 +435,12 @@ bootstrap_model <- function(x, y, model_method, n_boot = 100, params = list(),sa
   
   #.632+:
   
-  #R <- (C_apparent - mean_oob_cindex ) / (C_apparent-C_noinfo)
-  #print(R)
-  #R <- min(max(R, 0), 1)  # constrain between 0 and 1
+  R <- (C_apparent - mean_oob_cindex ) / (C_apparent-C_noinfo)
+  R <-ifelse(is.na(R),0,R)
+  R <- min(max(R, 0), 1)  # constrain between 0 and 1
+  w <- 0.632 / (1 - 0.368 * R)
+  C_632plus_canonical <- (1 - w) * C_apparent + w * mean_oob_cindex 
   
-  #w <- 0.632 / (1 - 0.368 * R)
-  #C_632plus <- (1 - w) * C_apparent + w * mean_oob_cindex 
   C_632plus = mean(C_632plus_b)
   # confidence intervals:
   ci_632 <- quantile(C_632b, c(0.025, 0.975), na.rm=TRUE)
@@ -459,6 +460,7 @@ bootstrap_model <- function(x, y, model_method, n_boot = 100, params = list(),sa
     C_corrected = C_corrected,
     C_632 = C_632,
     C_632plus = C_632plus,
+    C_632plus_canonical = C_632plus_canonical ,
     oob_cindex = oob_cindex,
     optimism_vec = optimism_vec,
     gene_selection_freq = gene_selection_freq,
@@ -479,6 +481,7 @@ bootstrap_model <- function(x, y, model_method, n_boot = 100, params = list(),sa
   
   return(results)
 }
+
 
 run_bootstrap_all_models <- function(x_list, y, model_list, n_boot = 100, outdir = "bootstrap_results",out_models = NULL) {
   dir.create(outdir, showWarnings = FALSE)

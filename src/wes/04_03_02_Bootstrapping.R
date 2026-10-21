@@ -301,6 +301,37 @@ df_box %>%
   rename(Bootstrap_632p_estimate=value)%>%
   write.xlsx(file.path(dir_results_script_cutoff,"Final_model","C-index_source_data.xlsx"))
 
+# Generate plot similar to SCCore-GEP performance evaluations:
+res <-final_results_filtering$results[[chosen_model]]
+df_box <- data.frame(value = res$C_oob_all)
+df_est <- data.frame(
+  value    = c(res$C_apparent, res$C_632plus_canonical),
+  estimate = c("Apparent", ".632+")
+)
+p_boxplot632_oob = ggplot(df_box, aes(x = "", y = value)) +
+  geom_boxplot(fill = "white", colour = "black", linewidth = 1,
+               width = 0.4, outlier.shape = NA) +
+  geom_jitter(width = 0.1,alpha=0.5)  +
+  annotate("point", x = 1, y = res$C_632plus_canonical,
+           colour = "#8B1A1A", size = 4) +
+  labs( x = NULL, y = "C-index") +
+  theme_classic(base_size = 14) +
+  theme(
+    plot.title         = element_text(hjust = 0.5, colour = "grey30"),
+    panel.grid.major.y = element_line(colour = "grey85"),
+    axis.text.x        = element_blank(),
+    axis.ticks.x       = element_blank(),
+    axis.line          = element_line(linewidth = 0.8)
+  )+  annotate("text", x = 1.25, y = res$C_632plus_canonical,
+               label = paste0(".632+: ",sprintf("%.2f", res$C_632plus_canonical)),
+               hjust = 0, colour = "#8B1A1A", size = 4.5, fontface = "bold")+scale_y_continuous(breaks = scales::breaks_width(0.05))
+
+ggsave(file.path(dir_results_script_cutoff,"Final_model","C-index_oob.pdf"),p_boxplot632_oob,width=5,height=8)
+df_box %>%
+  mutate(Bootstrap_rep=1:n_boot)%>%
+  rename(Bootstrap_oob_estimate=value)%>%
+  write.xlsx(file.path(dir_results_script_cutoff,"Final_model","C-index_oob_source_data.xlsx"))
+  
 # Feature robustness:
 df <- data.frame(
   model = chosen_model,
