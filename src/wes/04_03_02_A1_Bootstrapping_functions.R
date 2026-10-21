@@ -401,17 +401,19 @@ bootstrap_model <- function(x, y, model_method, n_boot = 100, params = list(),sa
     }
     surv_boot <- apply_model(x_boot, fit_bootstrap, model_method, params = params)
     surv_oob  <- apply_model(x_oob, fit_bootstrap, model_method, params = params)
+    surv_orig <- apply_model(x, fit_bootstrap, model_method, params = params)
     
     C_boot <- concordance(y_boot ~ surv_boot)$concordance
     #print(C_boot)
     #print(concordance(y_boot ~ fit_bootstrap$surv_prob)$concordance)
     C_oob  <- concordance(y_oob ~ surv_oob)$concordance
+    C_orig <- concordance(y ~ surv_orig)$concordance
     # Save OOB:
     oob_predictions[rownames(x_oob ),b] = surv_oob
     bs_predictions[rownames(x_boot),b]= surv_boot
     
     oob_cindex[b] <- C_oob
-    optimism_vec[b] <- C_boot - C_oob
+    optimism_vec[b] <- C_boot - C_orig
     models_list[[b]] <- fit_bootstrap$model_fit
     C_632b[b] <- 0.632 * C_oob + 0.368 * C_apparent
     

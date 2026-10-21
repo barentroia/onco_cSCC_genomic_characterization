@@ -6,7 +6,7 @@
 #---------------------------------------------------
 
 # Helper functions:
-source(file.path(dir_scripts,"04_Publication_scripts","04_03_02_A1_Bootstrapping_functions.R"))
+source(file.path(dir_scripts,"wes","04_03_02_A1_Bootstrapping_functions.R"))
 #-----------------------
 # 0. Input features
 #-----------------------
@@ -221,8 +221,7 @@ df <- as.data.frame(lapply(final_models_coefs, function(x) {
   #onco_score_GA_noFPen_02 = list(method="Onco_score","fsel"="GA","GA.val"=TRUE,"GA.feat_penalty"=FALSE,"p_thresh"=0.2),
   #onco_score_GA_noVal_wFPen = list(method="Onco_score","fsel"="GA","GA.val"=FALSE,"GA.feat_penalty"=TRUE),
   #onco_score_GA_noFPen = list(method="Onco_score","fsel"="GA","GA.val"=TRUE,"GA.feat_penalty"=FALSE),
-  #onco_score_GA_wFPen = list(method="Onco_score","fsel"="GA","GA.val"=TRUE,"GA.feat_penalty"=TRUE)
-)
+  #onco_score_GA_wFPen = list(method="Onco_score","fsel"="GA","GA.val"=TRUE,"GA.feat_penalty"=TRUE))
 
 #list_x = list("Genes_Pathways_CNV"=x)
 #final_results_2 <- run_bootstrap_all_models(list_x, y, model_list, n_boot = 20, outdir = dir_results_script)
