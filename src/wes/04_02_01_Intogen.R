@@ -16,7 +16,7 @@
 # 1. Load and preprocess mutation data
 #-----------------------
 
-source("T:/Barbara/WES_analyses/Publication/UCSF_WES_CSCC/04_Publication_scripts/04_02_01_A1_Preprocessing_cancer_gene_analysis.R")
+source(file.path(dir_scripts,"wes","04_02_01_A1_Preprocessing_cancer_gene_analysis.R")
 
 #-----------------------
 # 2. Preprocess dataframes to a format that can be interpreted 
@@ -24,23 +24,7 @@ source("T:/Barbara/WES_analyses/Publication/UCSF_WES_CSCC/04_Publication_scripts
 # EMC_cohort:
 options(scipen=10)
 
-# Note: the strand should be positive, let's check if it is:
-#sample_file_names = read.xlsx(paste0("T:/Barbara/WES_analyses/Results/Meta_data/File_names_all_batches.xlsx"))
-#all_files = list.files("T:/Barbara/WES_analyses/Results/MML/Tumor_only_analyses/")
-#funcotator_files = all_files[grepl("fastp_tonly\\.funcotator",all_files)]
-#for(t_prefix in funcotator_files ){
-#  if(grepl("N_",t_prefix)){
-    
-#  }else{
-#    if(!t_prefix%in%c("Hyb-21_5_085-1-A1_DNA_S5_L002_fastp.funcotator.txt","Hyb-21_5_085-1-A1_DNA_S5_L002_fastp.funcotator_file-J19k2q80GGpVvKQyZBB02Bgf.txt")){
-#        funcotator_output = read.delim(paste0("T:/Barbara/WES_analyses/Results/MML/Tumor_only_analyses/",t_prefix),          sep="\t", fill=TRUE,skip=156)
-#        stopifnot(names(table(funcotator_output$Strand))=="+")
-#    }
-#
-#  }
-
-#}
-sbatch_script_template = read_file(file.path(dir_scripts,"04_Publication_scripts/04_02_01_A1_sbatch_intogen.sh"))
+sbatch_script_template = read_file(file.path(dir_scripts,"wes","04_02_01_A1_sbatch_intogen.sh"))
 annotation_template<- yaml.load_file("T:/Barbara/WES_analyses/Results/Cancer_gene_discovery/intogen_plus/annotation_mega_MML_147.yaml")
 dir.create(file.path(dir_results_script,"EMC_cohort"))
 for( group in c("Entire_cohort","Cases", "Controls","ISuppressed","ICompetent")){
