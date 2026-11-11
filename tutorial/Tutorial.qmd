@@ -1,0 +1,386 @@
+---
+title: "Applying SCCore-GEP to an external RNA-seq cohort"
+subtitle: "Example: Nassir et al., J Invest Dermatol 2025 (GSE284467)"
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 2
+    number-sections: false
+    code-overflow: wrap
+    fig-width: 8
+    fig-height: 4.2
+    grid:                    # page layout: adjust these to change the margins
+      body-width: 1200px     # width of the main text/code column
+      margin-width: 220px    # right margin (holds the table of contents)
+      gutter-width: 1.5rem   # space between columns
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Setup
+
+This notebook shows how to:
+
+- apply the SCCore-GEP signature to a new RNA-seq cohort of cSCCs 
+- compare its discrimination with BWH staging.
+
+As an example of a validation cohort, we use the RNA-seq cohort of Nassir et al. (GSE284467). The notebook needs to be adapted to run in a new validation cohort, depending on the information available for the new cohort (e.g. completeness of BWH stages, survival or binary metastatic outcome) and bridging steps required.
+
+Background information: the SCCore-GEP signature was defined in the publication *Comprehensive molecular characterization of cutaneous squamous cell carcinoma reveals determinants of metastatic progression*, and its coefficients are provided in Table S7. Preprocessing of the Nassir cohort is described in the Supplementary text.
+
+Code: the code in this notebook was adapted from the script `src/validation/nassir/analyses/SCCoreGEP_BWH_performances.R` in this repository.
+
+## A. Input
+
+All file paths, sample exclusions and settings are declared here.
+
+```{r inputs}
+source("renv/activate.R")
+
+# SCCore-GEP model (Table S7, sheet "Data"). Columns used: Gene Symbol, Ensembl ID, Coefficient
+table_s7_fn <- "data/TableS7.xlsx"
+
+# New cohort (we use the Nassir et al. cohort as an example)
+#   clinical:              Run, SampleID, Tumor, MetNoMet ("Met"/"NoMet")
+#   TPMs:                  gene_id, gene_name, one column per Run (before normalisation)
+#   normalised expression: log2(TPM+1), ComBat-corrected to D-SQUAME discovery (section D);
+#                          gene_id (Ensembl) + one column per Run
+external_cohort_clinical_fn <- "data/validation_cohort/Metadata_supp_tableS3_SRA.csv"
+external_cohort_tpm_fn      <- "data/validation_cohort/salmon.merged.gene_tpm.all.tsv"
+external_cohort_norm_fn     <- "data/validation_cohort/Nassir_TPM_combat_nomod.tsv"
+external_cohort_exclude     <- c("SRR31748002","SRR31748007")   # failed QC
+external_cohort_name        <- "Nassir"
+
+# D-SQUAME discovery reference (derived from discovery TPMs, see section D)
+#   PCA model:  list with genes, center, scale, rotation (PC1, PC2), pct_var
+#               (PCA on the 1000 most variable genes of the discovery cohort)
+#   PCA scores: discovery PC1, PC2
+#   scores:     SCCore-GEP scores in the discovery cohort (sccore_gep)
+discovery_pca_model_fn  <- "data/discovery_cohort/rna_seq_a1_pca_model_top1000.rds" # generated in script: src/rna_seq/analyses/rna_seq_a1_preprocessing.R
+discovery_pca_scores_fn <- "data/discovery_cohort/rna_seq_a1_PCA_discovery.csv" # generated in script: src/rna_seq/analyses/rna_seq_a1_preprocessing.R
+discovery_sccore_fn     <- "data/discovery_cohort/cox23_linear_predictors.csv" # generated in script: src/sccore_gep/analyses/process_output_models.R 
+
+# Analysis settings
+n_boots    <- 2000     # bootstrap resamples for AUC 95% CI
+seed       <- 2026
+output_dir <- file.path("results", "validation", external_cohort_name)
+```
+
+```{r libraries}
+# Install any missing packages:
+# pkgs <- c("openxlsx", "tidyverse", "pROC", "knitr")
+# missing_pkgs <- pkgs[!pkgs %in% rownames(installed.packages())]
+# if (length(missing_pkgs) > 0) install.packages(missing_pkgs, repos = "https://cloud.r-project.org")
+
+# Load libraries
+library(openxlsx)
+library(tidyverse)
+library(pROC)
+library(patchwork)
+# Bioconductor packages (e.g. AnnotationDbi, loaded by sva) mask dplyr's select()
+# and filter(); make sure the dplyr versions are used throughout
+select <- dplyr::select
+filter <- dplyr::filter
+
+set.seed(seed)
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Helper function: read an expression table (genes in rows, samples in columns) as a matrix
+# and remove Ensembl versions (e.g ENSG00000229807.13 -> ENSG00000229807)
+# GENCODE annotates genes in the pseudoautosomal region of chrY with a "_PAR_Y" suffix
+# (e.g. ENSG00000002586.20_PAR_Y); these become duplicates of the chrX copy once the
+# version is removed, so they are dropped. It has no effect in our analyses since these genes are not part of the genes used for the PCA nor the signature
+read_expr <- function(fn) {
+  x <- read_tsv(fn, show_col_types = FALSE) |>
+    filter(!grepl("_PAR_Y$", gene_id)) |> 
+    mutate(gene_id = sub("\\..*", "", gene_id)) |>
+    select(-any_of("gene_name"))
+  dups <- unique(x$gene_id[duplicated(x$gene_id)])
+  if (length(dups) > 0)
+    stop("Duplicated gene IDs after removing versions: ", paste(head(dups, 10), collapse = ", "))
+  x |> column_to_rownames("gene_id") |> as.matrix()
+}
+```
+
+## B. Clinical data and quality control
+
+In this section, we:
+
+1. Remove samples that failed QC and non-cSCC samples from the validation cohort (e.g. normal-skin controls are present in the Nassir cohort)
+2. Harmonize case/control labels, so that samples with events are labelled "Case" and those without events "Control"
+3. Extract BWH stage from the sample annotation, to allow comparison with staging
+
+```{r clinical}
+clin_external_cohort <- read.csv(external_cohort_clinical_fn) |>
+  filter(!Run %in% external_cohort_exclude, Tumor != "CTRL") |>
+  mutate(Sample_id  = Run,
+         Metastasis = if_else(MetNoMet == "Met", "Case", "Control"),
+         # BWH stage is encoded in SampleID (e.g. s_CSCC_367_T2a_B4); the 16 tumours without a
+         # stage in their SampleID were assigned T2b to match the numbers in the publication
+         BWH        = replace_na(str_extract(SampleID, "T[0-9]+[a-z]?"), "T2b"))
+table(clin_external_cohort$Metastasis, clin_external_cohort$BWH)
+```
+
+## C. SCCore-GEP coefficients (Table S7)
+
+Tabe S7 provides the full specification of the model, i.e. the Cox regression coefficient of each gene in the siganture. Coefficients are named by Ensembl ID, to match the expression data.
+
+```{r coefficients}
+# Remove all whitespace, including non-breaking spaces copied from Word/Excel
+clean <- function(x) gsub("[\\h\\v]", "", as.character(x), perl = TRUE)
+
+sccore <- read.xlsx(table_s7_fn, sheet = "Data", sep.names = " ")
+names(sccore) <- trimws(gsub(" ", " ", names(sccore))) # This removes the extra spaces in the excel
+sccore <- sccore |>
+  transmute(gene_name = clean(`Gene Symbol`),
+            gene_id   = clean(`Ensembl ID`),
+            beta      = as.numeric(sub(",", ".", clean(Coefficient), fixed = TRUE)))
+beta <- setNames(sccore$beta, sccore$gene_id)
+stopifnot(length(beta) == 23, !anyNA(beta), all(grepl("^ENSG", names(beta))))
+table(sign(beta))   # 13 genes up in controls (< 0) and 10 up in cases (> 0)
+
+# SCCore-GEP score: linear predictor sum(beta * x), for a genes x samples matrix on log2 (tpm+1) scale
+lp <- function(m) {
+  stopifnot(all(names(beta) %in% rownames(m)))
+  setNames(as.vector(t(m[names(beta), , drop = FALSE]) %*% beta), colnames(m))
+}
+```
+
+## D. Bridging of the validation cohort to the discovery scale
+
+::: {.callout-important}
+## Bridging is required before applying SCCore-GEP in a new dataset
+The coefficients provided in Table S7 are only valid for input gene expression values that are on the same scale as the data used to fit the model (i.e. the RNA sequencing of the D-SQUAME discovery dataset). For meaningful application of the signature, raw counts or TPMs from cohorts where other sequencing technologies have been used need to be brought to the same scale as the discovery dataset.
+
+To apply the signature in the Nassir cohort, we used ComBat to bring the dataset onto the same scale as the discovery dataset. Different steps might be required in another cohort. The normalization with Combat requires the D-SQUAME discovery TPMs (available at EGA, EGAS50000001852), therefore the normalized Nassir cohort is directly provided.
+:::
+
+```{r normalisation, eval = FALSE}
+# Requires the D-SQUAME discovery data (EGA, EGAS50000001852):
+#   tpm_discovery:  ID (Ensembl) + one column per discovery sample (TPM)
+#   clin_discovery: Sample_id, Metastasis ("Case"/"Control"), BWH
+tpm_external <- read_tsv(external_cohort_tpm_fn) |>
+  select(gene_id, all_of(clin_external_cohort$Sample_id))
+clin_comb <- bind_rows(
+  mutate(select(clin_discovery,       Sample_id, Metastasis, BWH), Dataset = "Discovery"),
+  mutate(select(clin_external_cohort, Sample_id, Metastasis, BWH), Dataset = external_cohort_name))
+
+# 1. log2(TPM + 1) of discovery and new cohort, on shared genes
+tpm_comb  <- inner_join(tpm_discovery, tpm_external, by = c("ID" = "gene_id")) |>
+  column_to_rownames("ID")
+clin_comb <- clin_comb[match(colnames(tpm_comb), clin_comb$Sample_id), ]
+logtpm    <- log2(as.matrix(tpm_comb) + 1)
+
+stopifnot(clin_comb$Sample_id == colnames(logtpm))
+# 2. ComBat with the discovery cohort as reference batch: discovery data are left
+#    unchanged and only the new cohort is shifted onto the discovery scale
+logtpm_corr <- sva::ComBat(dat = logtpm, batch = clin_comb$Dataset,
+                           mod = model.matrix(~ Metastasis + BWH, data = clin_comb),
+                           ref.batch = "Discovery")
+
+# 3. Export the normalised new cohort (Ensembl versions removed)
+rownames(logtpm_corr) <- sub("\\..*", "", rownames(logtpm_corr))
+write_tsv(rownames_to_column(as.data.frame(logtpm_corr[, clin_external_cohort$Sample_id]), "gene_id"),
+          external_cohort_norm_fn)
+
+# 4. Discovery reference used in section E: PCA on the 1000 most variable genes of the
+#    discovery cohort (centred and scaled), and SCCore-GEP scores in the discovery cohort
+#    log2tpm_model_input: log2(TPM + 1) of the discovery samples (genes x samples)
+# This was ran in src/rna_seq/analyses/rna_seq_a1_preprocessing.R
+top_pca <- 1000
+highest_variance <- sort(apply(log2tpm_model_input, 1, var), decreasing = TRUE)[1:top_pca]
+expr_t <- t(as.matrix(log2tpm_model_input[names(highest_variance), ]))
+pca <- prcomp(expr_t, scale = TRUE)
+saveRDS(list(genes    = names(highest_variance),
+             center   = pca$center,
+             scale    = pca$scale,
+             rotation = pca$rotation[, c("PC1", "PC2")],
+             pct_var  = round(100 * pca$sdev[1:2]^2 / sum(pca$sdev^2), 2)),
+        discovery_pca_model_fn)
+write.csv(data.frame(PC1 = pca$x[, "PC1"], PC2 = pca$x[, "PC2"]), discovery_pca_scores_fn)
+
+rownames(log2tpm_model_input) <- sub("\\..*", "", rownames(log2tpm_model_input))
+write_csv(tibble(sccore_gep = lp(log2tpm_model_input)), discovery_sccore_fn)
+```
+
+## E. Check the external cohort before and after bridging
+
+In this section we compare the external cohort before and after bridging, to check that it is on a similar scale as the discovery dataset: first on the main axes of transcriptome-wide variation (PCA), then on the SCCore-GEP score itself.
+
+```{r expression}
+log_raw_val    <- log2((read_expr(external_cohort_tpm_fn)[, clin_external_cohort$Sample_id]) +1) 
+log_norm_val <-log2((read_expr(external_cohort_norm_fn)[, clin_external_cohort$Sample_id]) +1) 
+# Sanity checks: all signature genes present
+stopifnot(all(names(beta) %in% rownames(log_norm_val)))
+#dim(log_norm_val)
+```
+::: {.callout-note}
+## PCA
+Before bridging, the external cohort may be separated from the discovery cohort along the main axes of variation. However, after bridging, external samples should be in a comparable PCA space as the discovery samples. 
+:::
+```{r pca}
+#| fig-cap: "PCA of the 1000 most variable genes of the discovery cohort; external cohort samples before and after bridging were projected onto this PCA space"
+pca_model <- readRDS(discovery_pca_model_fn)
+pca_genes <- sub("\\..*", "", pca_model$genes)          # drop Ensembl versions
+rotation  <- pca_model$rotation[, c("PC1", "PC2")]
+
+project <- function(m) {                                # m: genes x samples, log2 scale
+  # Genes not measured in the external cohort are set to their discovery mean, so that they contribute nothing to the projection
+  missing_genes <- setdiff(pca_genes, rownames(m))
+  if (length(missing_genes) > 0) {
+    cat(length(missing_genes), "of", length(pca_genes),
+        "PCA genes not measured in the external cohort; set to the discovery mean\n")
+    fill <- matrix(pca_model$center[match(missing_genes, pca_genes)],
+                   nrow = length(missing_genes), ncol = ncol(m),
+                   dimnames = list(missing_genes, colnames(m)))
+    m <- rbind(m, fill)
+  }
+  z <- scale(t(m[pca_genes, ]), center = pca_model$center, scale = pca_model$scale)
+  as_tibble(z %*% rotation, rownames = "Sample_id") |>
+    left_join(select(clin_external_cohort, Sample_id, Metastasis), by = "Sample_id") |>
+    mutate(set = external_cohort_name)
+}
+
+disc_pcs <- read_csv(discovery_pca_scores_fn, show_col_types = FALSE) |>
+  rename(Sample_id = 1) |>
+  mutate(set = "Discovery")
+
+panels <- c("Before bridging", "After bridging")
+pcs <- bind_rows(mutate(disc_pcs,         panel = panels[1]),
+                 mutate(disc_pcs,         panel = panels[2]),
+                 mutate(project(log_raw_val), panel = panels[1]),
+                 mutate(project(log_norm_val),    panel = panels[2])) |>
+  mutate(panel = factor(panel, levels = panels))
+
+pcs <- pcs |>
+  mutate(grp = ifelse(set == "Discovery", "Discovery", paste(set, Metastasis))) # For plot labels
+
+# Separate legends for discovery and validation:
+lv   <- c("Discovery", paste(external_cohort_name, c("Case", "Control")))
+cols <- setNames(c("#1f3b73", "#b5432f", "#b5432f"), lv)
+shps <- setNames(c(16, 17, 16), lv)
+
+p_pca <- ggplot(pcs, aes(PC1, PC2, colour = set)) +
+  geom_point(data = filter(pcs, set == "Discovery"), size = 1.6, alpha = 0.4) +
+  geom_point(data = filter(pcs, set != "Discovery"), aes(shape = Metastasis), size = 2.2) +
+  facet_wrap(~ panel) +
+  scale_colour_manual(values = setNames(c("#1f3b73", "#b5432f"), c("Discovery", external_cohort_name)),
+                      breaks = "Discovery", name = NULL) +
+  scale_shape_manual(values = c(Case = 17, Control = 16), name = external_cohort_name) +
+  guides(
+    colour = guide_legend(order = 1, override.aes = list(alpha = 0.4, size = 2.2)),
+    shape  = guide_legend(order = 2, override.aes = list(colour = "#b5432f", size = 2.2))
+  )  + theme(legend.position = "top",
+        legend.title = element_text(size = 10),
+        legend.text  = element_text(size = 10))
+  labs(x = paste0("PC1 (", pca_model$pct_var[1], "%)"),
+       y = paste0("PC2 (", pca_model$pct_var[2], "%)")) +
+  theme_bw() + theme(legend.position = "top")
+
+ggsave(file.path(output_dir, "pca_bridging_check.pdf"), p_pca, width = 8, height = 4.2)
+p_pca
+```
+::: {.callout-note}
+## Linear predictor of SCCore-GEP before and after bridging
+The distribution of the linear predictor after bridging the external cohort should be more comparable to the linear predictor in the discovery dataset
+:::
+```{r sccoregep-density}
+#| fig-cap: "SCCore-GEP linear predictor distributions in the discovery cohort and in the external cohort before and after bridging."
+#| fig-width: 6
+#| fig-height: 3.5
+set_levels <- c("Discovery",
+                paste(external_cohort_name, "– before bridging"),
+                paste(external_cohort_name, "– after bridging"))
+set_cols   <- setNames(c("#1f3b73", "#b5432f", "#1f78b4"), set_levels)
+
+scores <- bind_rows(
+  if (file.exists(discovery_sccore_fn))
+    read_csv(discovery_sccore_fn, show_col_types = FALSE) |> transmute(set = set_levels[1], score = lp),
+  tibble(set = set_levels[2], score = lp(log_raw_val)),
+  tibble(set = set_levels[3], score = lp(log_norm_val))) |>
+  mutate(set = factor(set, levels = set_levels))
+
+p_score <- ggplot(scores, aes(score, colour = set, fill = set)) +
+  geom_density(alpha = 0.2) +
+  scale_colour_manual(values = set_cols, aesthetics = c("colour", "fill"), drop = FALSE) +
+  labs(x = "SCCore-GEP score (linear predictor)", y = "Density", colour = NULL, fill = NULL) +
+  theme_bw()
+ggsave(file.path(output_dir, "sccore_score_density.pdf"), p_score, width = 6, height = 3.5)
+p_score
+```
+
+## F. Discrimination: SCCore-GEP vs BWH staging
+
+::: {.callout-note}
+## Note on reported performances
+In the D-SQUAME validation cohort, weighted C-indices are used to estimate the performance of the signature at the population-level. This is possible because the cohort was derived from a fully enumerated population-based cohort, using a nested case-control design. Besides the outcome labels (case vs control), survival time was also available, which allowed for computation of C-indexes.
+In contrast, the Nassir et al. provides metastasis as a binary outcome without follow-up time, so reported performance can only be based on Area Under the ROC curve. Moreover, although the cohort is stage-matched, the corresponding population-based cohort is not available, therefore we cannot correct for the matching design using weighted metrics. The reported performances are therefore unweighted, and are not guaranteed to be valid at the population level. 
+
+If your cohort has follow-up time information and/or is derived from a population-based cohort, the following blocks need to be adapted.
+:::
+
+```{r performance}
+# Compute performance on the validation cohort and save linear predictors:
+preds <- tibble(Sample_id = colnames(log_norm_val), sccore_gep = lp(log_norm_val)) |>
+  left_join(clin_external_cohort, by = "Sample_id") |> # Add clinical information
+  transmute(Sample_id, sccore_gep, BWH,
+            Metastasis_num = as.integer(Metastasis == "Case"),
+            bwh            = as.numeric(factor(BWH, levels = c("T1", "T2a", "T2b", "T3"))),
+            stage_group    = if_else(BWH %in% c("T1", "T2a"), "T1-T2a", "T2b-T3"))
+write_csv(preds, file.path(output_dir, "SCCoreGEP_scores.csv"))
+
+# AUC function with confidence intervals:
+auc_ci <- function(y, score) {
+  if (length(unique(y)) < 2) return(tibble(auc = NA, lower = NA, upper = NA))
+  r  <- roc(y, score, direction = "<", quiet = TRUE)
+  ci <- ci.auc(r, method = "bootstrap", boot.n = n_boots, progress = "none")
+  tibble(auc = ci[2], lower = ci[1], upper = ci[3])
+}
+
+# Compute performance for different groups:
+perf <- bind_rows(mutate(preds, group = "All"),
+                  mutate(preds, group = stage_group)) |>
+  pivot_longer(c(sccore_gep, bwh), names_to = "model", values_to = "score") |>
+  group_by(model, group) |>
+  summarise(N = n(), auc_ci(Metastasis_num, score), .groups = "drop")
+write_csv(perf, file.path(output_dir, "SCCoreGEP_BWH_performances.csv"))
+
+```
+
+```{r roc}
+#| fig-cap: "ROC curves of SCCore-GEP and BWH staging in the entire validation cohort (A) and in BWH T1–T2a tumours (B)."
+#| fig-width: 10
+#| fig-height: 4.5
+
+
+plot_roc <- function(df, title) {
+  rocs <- list(`SCCore-GEP` = roc(df$Metastasis_num, df$sccore_gep, direction = "<", quiet = TRUE),
+               BWH          = roc(df$Metastasis_num, df$bwh,        direction = "<", quiet = TRUE))
+  ggroc(rocs, legacy.axes = TRUE, linewidth = 1) +
+    geom_abline(linetype = "dashed", colour = "grey60") +
+    scale_colour_manual(values = c(`SCCore-GEP` = "#1f78b4", BWH = "#d6337f"),
+                        breaks = names(rocs),
+                        labels = sprintf("%s (AUC %.2f)", names(rocs), sapply(rocs, auc))) +
+    labs(title = sprintf("%s (n = %d; %d metastases)", title, nrow(df), sum(df$Metastasis_num)),
+         x = "1 − Specificity", y = "Sensitivity", colour = NULL) +
+    coord_equal() + theme_bw() +
+    theme(legend.position = "inside", legend.position.inside = c(0.68, 0.18),
+          plot.title = element_text(size = 11))
+}
+
+p_roc <- plot_roc(preds, "Entire cohort") +
+         plot_roc(filter(preds, stage_group == "T1-T2a"), "BWH T1–T2a") +
+         plot_annotation(tag_levels = "A")
+
+ggsave(file.path(output_dir, "roc_all_T1T2a.pdf"), p_roc, width = 10, height = 4.5)
+p_roc
+```
+
+## Session information
+
+```{r session}
+sessionInfo()
+```
