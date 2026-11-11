@@ -1,19 +1,30 @@
-#-------------------------------------------------------------------------------
-# Aim: Perform multiple imputation on D-SQUAME discovery clinical dataset
-# Author: L.Pozza
-# Input: D-SQUAME discovery clinical dataset
-# Output: Multiple imputation object and merged multiple imputed dataset
-#-------------------------------------------------------------------------------
-# Load libraries
+#===============================================================================
+# Aim:      Perform multiple imputation (mice) of missing clinical variables in
+#           the D-SQUAME discovery clinical dataset.
+# Author:   L. Pozza
+# Input:    - D-SQUAME discovery clinical dataset (p3_clinical, Excel sheets
+#             "Samples" and "Tumor")
+# Output:   Written to results_dir/intermediate/clinical/:
+#           - Missing data pattern plots (before/after variable selection)
+#           - mice logged events, convergence, density and proportion plots
+#           - clinical_data_imputed_d_squame_discovery.Rdata (mids object)
+#           - merged_clinical_data_imputed_d_squame_discovery.csv (one row per
+#             sample; median/mode over the imputed datasets)
+# Requires: code_dir, results_dir (main.R); p3_clinical (config.R)
+# Usage:    Sourced from main.R
+#===============================================================================
+
+# 1. Load libraries
 #-------------------------------------------------------------------------------
 library(conflicted)
 library(tidyverse)
 library(VIM)
 library(mice)
 library(DescTools)
+library(DescTools)
 #-------------------------------------------------------------------------------
 
-# Filenames and settings
+# 2. Filenames and settings
 #-------------------------------------------------------------------------------
 # Clinical data
 clinical_fn <- p3_clinical
@@ -22,13 +33,13 @@ output_dir <- file.path(results_dir, "intermediate", "clinical")
 if (!dir.exists(output_dir)){dir.create(output_dir, recursive = T)}
 #-------------------------------------------------------------------------------
 
-# Source functions
+# 3. Source functions
 #-------------------------------------------------------------------------------
 source(file.path(code_dir, "functions", "stagings_emcmodel_funs.R"))
 source(file.path(code_dir, "functions", "propplot_fun.R"))
 #-------------------------------------------------------------------------------
-  
-# Read data and prepare output folder
+
+# 4. Read data and prepare output folder
 #-------------------------------------------------------------------------------
 clinical_samples <- openxlsx::read.xlsx(clinical_fn, sheet = "Request Lara - Samples (values)")
 clinical_tumors <- openxlsx::read.xlsx(clinical_fn, sheet = "Request Lara - Tumor (values)")
@@ -43,16 +54,19 @@ clinical <- clinical_samples %>%
                    c("Sample_id" = "Sample_ID")),
             suffix = c("_samplessheet", "_tumorsheet"))
 #-------------------------------------------------------------------------------
-  
-# Check pattern of missing data
+
+# 5. Check pattern of missing data
 #-------------------------------------------------------------------------------
 pdf(file.path(output_dir,"multiple_imputation_missing_data_d_squame_discovery.pdf"), height = 6, width = 20)
 aggr(clinical, oma = c(15,5,5,5))
 dev.off()
 #-------------------------------------------------------------------------------
-  
-# Direct imputation of variables and transformation into right class
+
+# 6. Direct imputation of variables and transformation into right class
 #-------------------------------------------------------------------------------
+# Variables whose missingness most likely means "absent" are set to "No"
+# directly; derived scores (CP score = EMC model risk, AJCC8, BWH) are then
+# recomputed so they are consistent with the updated values.
 clinical <- clinical %>%
               mutate(Invasion_of_bones = ifelse(is.na(Invasion_of_bones), "No", Invasion_of_bones), # Assume that if missing, bones invasion is not present
                      PNI_bin = ifelse(is.na(PNI_bin), "No", PNI_bin), # Assume that if missing, PNI is not present
@@ -124,15 +138,15 @@ vars_to_exclude <- c("Set_id",
            Solar_elastosis = factor(Solar_elastosis, levels = c("Absent/moderate", "Extensive")),
            Peritumoral_infiltration = factor(Peritumoral_infiltration, levels = c("Absent/moderate", "Abundant")))
 #-------------------------------------------------------------------------------
-
-# Check pattern of missing data
+  
+# 7. Check pattern of missing data in the selected variables
 #-------------------------------------------------------------------------------
 pdf(file.path(output_dir, "multiple_imputation_missing_data_sel_vars_d_squame_discovery.pdf"), height = 6, width = 20)
 aggr(clinical_sub, oma = c(15,5,5,5))
 dev.off()
 #-------------------------------------------------------------------------------
 
-# Multiple imputation
+# 8. Multiple imputation
 #-------------------------------------------------------------------------------
 # Initialization of multiple imputation
 ## As method, use the default options:
@@ -177,7 +191,9 @@ mimp <- mice(clinical_sub,
              vis = "monotone",
              print = F)
 
-# Extract imputed rows and for each varaible get median (numeric) or mode (categorical)
+# Combine the imputed datasets into one: per sample, take the median (numeric)
+# or mode (categorical) of each imputed variable, then recompute and check the
+# derived scores (CP score, AJCC8, BWH)
 imp_vars <- c("Tumor_location", "Tumor_diameter", "Tumor_width", "Tissue_involvement",
               "Differentiation", "Depth_of_Invasion", "Breslow_thickness", "Resection_margin_cat",
               "Solar_elastosis", "Peritumoral_infiltration")
@@ -220,8 +236,8 @@ imputed_ds <- imputed_ds %>%
   rename("SkylineDx.ID" = "Skyline_ID")
 stopifnot(!any(duplicated(imputed_ds$SkylineDx.ID)))
 #-------------------------------------------------------------------------------
-  
-# Save results
+
+# 9. Save results
 #-------------------------------------------------------------------------------
 # Save logged events
 write.csv(mimp$loggedEvents %>% as.data.frame(),

@@ -1,12 +1,19 @@
+#===============================================================================
+# Aim:      Helper functions for the analysis of single-cell (and spatial)
+#           sequencing data with Seurat.
+# Contents: - default_seurat_processing_PCA(): normalization, scaling and PCA
+#           - default_seurat_UMAP(): neighbours, clustering and UMAP
+#           - custom_dotPlot(), custom_dotPlot_sum(): data for dot plots
+# Usage:    Sourced by the scripts in src/single_cell_spatial
+#===============================================================================
 
+#' Default processing of seurat object, normalization + scaling + PCA
+#'
+#' @param seurat_object Seurat object.
+#'
+#' @return processed seurat object
 default_seurat_processing_PCA <- function(seurat_object) {
-  #' Default processing of seurat object, normalization + scaling + PCA
-  #' 
-  #' @param seurat_object seurat object 
-  #'
-  #' @return processed seurat object
-  #'  
-  
+
   seurat_object <- NormalizeData(seurat_object, normalization.method = "LogNormalize", scale.factor = 10000)
   seurat_object <- FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000)
   all.genes <- rownames(seurat_object)
@@ -18,16 +25,14 @@ default_seurat_processing_PCA <- function(seurat_object) {
   return(seurat_object)
 }
 
+#' Default processing of seurat object, UMAP
+#'
+#' @param seurat_object Seurat object.
+#' @param reduction character. Reduction, default is pca
+#' @param dims numeric. Number of dimensisions, default is 15.
+#'
+#' @return processed seurat object
 default_seurat_UMAP <- function(seurat_object, reduction="pca", dims=15) {
-  #' Default processing of seurat object, UMAP
-  #' 
-  #' @param seurat_object seurat object 
-  #' @param reduction character. Reduction, default is pca 
-  #' @param dims numeric. Number of dimensisions, default is 15. 
-  #'
-  #' @return processed seurat object
-  #'  
-  
   seurat_object <- FindNeighbors(seurat_object, reduction = reduction, dims = 1:dims)
   seurat_object <- FindClusters(seurat_object)
   seurat_object <- RunUMAP(seurat_object, reduction = reduction, dims = 1:dims)
@@ -35,16 +40,18 @@ default_seurat_UMAP <- function(seurat_object, reduction="pca", dims=15) {
   return(seurat_object)
 }
 
+
+#' Data for a custom dot plot (mean expression per group)
+#'
+#' Based on Seurat::DotPlot(): per group, the average (expm1) expression and
+#' the percentage of cells expressing each feature.
+#'
+#' @param seurat_obj Seurat object.
+#' @param features character vector. Features (genes) to plot.
+#' @param group_by character. Metadata column used to group the cells.
+#'
+#' @return data.frame for plotting the dot plot with ggplot2.
 custom_dotPlot <- function(seurat_obj, features, group_by){
-  #' Custom dot plot based on the dotPlot function in Seurat
-  #' 
-  #' @param seurat_object seurat object 
-  #' @param features list. List of features (genes) to be plotted 
-  #' @param group_by character. Variable by which the cells are grouped
-  #'
-  #' @return data frame for plotting the dotplot with ggplot2
-  #'  
-  
   # extract expression and generate dot plot of model genes
   data.features <- FetchData(object = seurat_obj, vars = features, cells = rownames(seurat_obj@meta.data))
   data.features$ident_custom <- seurat_obj@meta.data[match(rownames(data.features),rownames(seurat_obj@meta.data)),][[group_by]]
@@ -80,17 +87,17 @@ custom_dotPlot <- function(seurat_obj, features, group_by){
   return(data.plot.df)
 }
 
-
+#' Data for a custom dot plot (summed expression per group)
+#'
+#' Same as custom_dotPlot(), but the expression is summed instead of
+#' averaged over the cells of each group.
+#'
+#' @param seurat_obj Seurat object.
+#' @param features character vector. Features (genes) to plot.
+#' @param group_by character. Metadata column used to group the cells.
+#'
+#' @return data.frame for plotting the dot plot with ggplot2.
 custom_dotPlot_sum <- function(seurat_obj, features, group_by){
-  #' Custom dot plot based on the dotPlot function in Seurat
-  #' 
-  #' @param seurat_object seurat object 
-  #' @param features list. List of features (genes) to be plotted 
-  #' @param group_by character. Variable by which the cells are grouped
-  #'
-  #' @return data frame for plotting the dotplot with ggplot2
-  #'  
-  
   # extract expression and generate dot plot of model genes
   data.features <- FetchData(object = seurat_obj, vars = features, cells = rownames(seurat_obj@meta.data))
   data.features$ident_custom <- seurat_obj@meta.data[match(rownames(data.features),rownames(seurat_obj@meta.data)),][[group_by]]

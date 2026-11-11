@@ -1,3 +1,11 @@
+#===============================================================================
+# Aim:      Colour palettes used in the publication figures.
+# Contents: - cols_clinical_data: clinical variables (metastasis, stages, ...)
+#           - cols_data_sets: datasets (discovery, D-SQUAME validation, Nassir)
+#           - cols_strat_systems: risk stratification systems and models
+#           - cols_bwh_alopex: BWH stages (alternative palette)
+# Usage:    Sourced by the figure scripts
+#===============================================================================
 cols_clinical_data <- list(Metastasis= c("Case"="#D54D94","Control"="#004F71"), 
                            BWH =  c("T1"="#ECB2CC", "T2a"="#f587df", "T2b"="#9B5FA5", "T3"="#4B1D6B", "Unknown"="#C7C7C7"),
                            AJCC8 =  c("T1"="#AE935F", "T2"="#9A7744", "T3"="#8B5A2B", "T4"="#4A2C17", "Unknown"="#C7C7C7"), 
@@ -12,5 +20,6 @@ cols_data_sets <- list("Nassir cohort"="#93BDA5",
 cols_strat_systems <- list("SCCore-GEP"="#D4B96A",
                            "EMC model"="#A7CBE3",
                            "BWH"="#D68FA3",
-                           "AJCC8"="#B08A6E")
+                           "AJCC8"="#B08A6E",
+                           "DvP score" = "#93bda5")
 cols_bwh_alopex <- list("T1"="#1E4348", "T2a"="#5EB1BE", "T2b"="#59C2B7", "T3"="#528bbf")

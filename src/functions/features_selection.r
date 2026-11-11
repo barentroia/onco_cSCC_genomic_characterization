@@ -1,16 +1,32 @@
-# select_features function: Wrapper function for different features selection method
-# @param ds_x: dataset with all of the features, columns should be features with colnames identifying the features
-# @param ds_y: dataset with outcomes of interest and matching information
-# @param sel_method: character indicating the feature selection method to use
-# @param N: integer indicating the number of features to select
-# @param outcome_name: character vector corresponding to the column name of the outcome of interest in the ds_y dataframe
-# @param fup_name: character vector corresponding to the column name of the follow-up time of the outcome of interest in the ds_y dataframe
-# @param weights_name: character vector corresponding to the column name of the weights in the ds_y dataframe
-# @param pairs_name: character corresponding to the column name of the pairs in the ds_y dataframe
-# @param sampleid_name: character corresponding to the column name of the sample IDs in the ds_y dataframe
-# @param ds_x_counts: counts dataset with all of the features, columns should be features with colnames identifying the features
-# @param model_params: vector of model parameters
-# @param genes_oi: list of genes of interest
+#===============================================================================
+# Aim:      Feature selection for the survival models, based on differential
+#           gene expression analysis with DESeq2.
+# Contents: - select_features(): wrapper for the feature selection methods
+#           - select_features_deseq2(): DESeq2-based gene selection
+# Usage:    Sourced by build_models.r
+#===============================================================================
+
+#' Select features with the requested method
+#'
+#' Wrapper around the available feature selection methods: "deseq2"
+#' (select_features_deseq2()) or "none" (no selection; genes_oi is returned
+#' if given).
+#'
+#' @param ds_x data.frame. Features (samples x features).
+#' @param ds_y data.frame. Outcomes and matching information.
+#' @param sel_method character. Feature selection method ("deseq2" or "none").
+#' @param N integer. Maximum number of features to select (NA = no limit).
+#' @param outcome_name character. Outcome column in ds_y.
+#' @param fup_name character. Follow-up time column in ds_y (not used).
+#' @param weights_name character. Weights column in ds_y (not used).
+#' @param pairs_name character. Case-control set column in ds_y (not used).
+#' @param sampleid_name character. Sample ID column in ds_y (not used).
+#' @param ds_x_counts data.frame. Raw counts (genes x samples).
+#' @param genes_oi character vector or NULL. Genes of interest to keep.
+#' @param model_params list. Model parameters with the DESeq2 settings.
+#'
+#' @return Character vector of selected features ordered by p-value, or NULL
+#'   when no selection is performed.
 select_features <- function(ds_x, ds_y, sel_method, N, outcome_name, fup_name, weights_name, pairs_name, sampleid_name, ds_x_counts, genes_oi, model_params){
 
     # Select features based on DGEA with DESeq2
@@ -33,14 +49,26 @@ select_features <- function(ds_x, ds_y, sel_method, N, outcome_name, fup_name, w
 }
 
 
-# select_features_deseq2 function: Function to select features based on DGEA with DESeq2
-# @param x: dataset with all of the features, columns should be features with colnames identifying the features
-# @param y: dataset with outcomes of interest and matching information
-# @param n: integer indicating the number of features to select
-# @param outcome_n: character vector corresponding to the column name of the outcome of interest in the y dataframe
-# @param x_counts: dataset with all of the features, columns should be features with colnames identifying the features (counts data)
-# @param goi: list of genes of interest
-# @param model_params: vector of model parameters
+#' Select differentially expressed genes with DESeq2
+#'
+#' Runs DESeq2 with model_params$deseq2_design and keeps genes passing the
+#' adjusted p-value (deseq2_padj_thresh, default 1) and |log2FC|
+#' (deseq2_logfc_thresh, default 0) thresholds. If deseq2_feats_thresh_by_logfc
+#' is set, the |log2FC| threshold is raised in steps of 0.1 until at most that
+#' many genes remain. Four samples flagged during exploratory analyses are
+#' excluded.
+#'
+#' @param x data.frame. Features (samples x genes); not used directly.
+#' @param y data.frame. Outcomes, rownames = sample IDs.
+#' @param n integer. Maximum number of genes to return (NA = no limit).
+#' @param outcome_n character. Outcome column in y (0/1).
+#' @param x_counts data.frame. Raw counts (genes x samples).
+#' @param goi character vector or NULL. Genes of interest; if given, only
+#'   these genes are kept.
+#' @param model_params list. DESeq2 settings: deseq2_design (required),
+#'   deseq2_padj_thresh, deseq2_logfc_thresh, deseq2_feats_thresh_by_logfc.
+#'
+#' @return Character vector of selected genes ordered by p-value.
 select_features_deseq2 <- function(x, y, n, outcome_n, x_counts, goi, model_params){
     if (is.null(x_counts)){stop("No counts data provided to run DGEA with DESeq2.")}
     if (is.null(model_params$deseq2_design)){stop("No DESeq2 design provided or provided with wrong variable name.")}

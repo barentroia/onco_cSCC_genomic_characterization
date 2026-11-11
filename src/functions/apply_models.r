@@ -1,11 +1,33 @@
-# apply_model function: This function applies the model provided in fitted model to the dataset ds_new
-# @param model_method: character indicating which type of model should be applied to the data
-# @param model_res: list with model results
-# @param ds_new: dataset where the model should be applied and which contains all of the features, columns should be features with colnames identifying the features
-# @param ds_new_y: dataset with outcomes of interest and matching informations
-# @param tp: number indicating the timepoint of interest
-# @param extra_model_info: additional information for modelling
-# @param model_params: vector of model parameters
+#===============================================================================
+# Aim:      Apply a fitted survival model (Coxnet or Random Survival Forest) to
+#           new data and return predicted event probabilities at a time point.
+# Contents: - apply_model()
+# Usage:    Sourced by Model_input_processing.R
+#===============================================================================
+
+#' Apply a fitted survival model to new data
+#'
+#' Computes predicted event probabilities, 1 - S(tp | x), at time point tp for
+#' a fitted regularized Cox (Coxnet) or Random Survival Forest (RSF) model.
+#' For Coxnet models the columns of ds_new are first matched to the features
+#' used during training, depending on the integration strategy
+#' (model.params$combi_type).
+#'
+#' @param model_method character. Model type; must contain "coxnet" or "RSF".
+#' @param model_res list. Output of build_model(), with at least fitted_model
+#'   and, for Coxnet, x_fitted_model, y_fitted_model and w_fitted_model.
+#' @param ds_new data.frame/matrix. New data (samples x features) with
+#'   feature names as column names.
+#' @param ds_new_y data.frame. Outcomes and matching information of ds_new
+#'   (not used; kept for a consistent interface).
+#' @param tp numeric. Time point (years) at which probabilities are computed.
+#' @param extra_model_info list. Additional modelling information (not used).
+#' @param model.params list or NULL. Model parameters; combi_type ("Stacked"
+#'   for late prediction integration, otherwise late feature integration)
+#'   selects how input features are matched.
+#'
+#' @return list with element predictions: named numeric vector of predicted
+#'   event probabilities at tp (names = rownames(ds_new)).
 apply_model <- function (model_method, model_res, ds_new, ds_new_y, tp, extra_model_info, model.params=NULL){
   # Model
   fitted_model <- model_res$fitted_model

@@ -1,12 +1,20 @@
+#===============================================================================
+# Aim:      Principal component analysis (PCA) of gene expression data.
+# Contents: - run_pca(): PCA on the most variable genes
+#           - prepare_pca_dfs(): combine PC scores with clinical data
+#           - plot_pca(): scatter plots of the first principal components
+# Usage:    Helper functions for exploratory analyses (not sourced by the
+#           scripts in main.R)
+#===============================================================================
+
+#' Run a PCA on the most variable genes
+#'
+#' @param object matrix. Gene expression matrix (genes x samples).
+#' @param ntop numeric. Number of genes with the highest variance used to
+#'   compute the principal components.
+#'
+#' @return prcomp object (PCA on scaled data, samples as observations).
 run_pca <- function(object, ntop = 500){
-  #' Plot PCA giving a DESeq2 object
-  #'
-  #' @param object matrix or dataframe. Gene expression matrix or dataframe
-  #' @param ntop numeric. Number of genes (with highest variance) to compute PCs
-  #'
-  #' @return list with PCA prcomp results
-  #'
-  
   # Gene variance
   rv <- matrixStats::rowVars(object)
   
@@ -20,16 +28,14 @@ run_pca <- function(object, ntop = 500){
   
 }
 
-
+#' Prepare data frames with PCA results for plotting
+#'
+#' @param object prcomp object. Output of run_pca().
+#' @param clnc data.frame. Clinical data, rownames = sample IDs.
+#'
+#' @return list with df_res (PC scores joined with clinical data) and
+#'   df_var_exp (% variance explained per PC).
 prepare_pca_dfs <- function(object, clnc){
-  #' Prepare datasets with PCA results
-  #'
-  #' @param object prcomp results
-  #' @param clnc dataframe. Dataframe with clinical info
-  #'
-  #' @return list dataframes used for plotting
-  #'
-  
   # Combine PCA info with clinical info
   # (datafrme with PC values for each sample)
   df <- object$x %>%
@@ -49,17 +55,17 @@ prepare_pca_dfs <- function(object, clnc){
        "df_var_exp" = percent_var_df)
 }
 
+#' Plot PC1-PC4 scatter plots
+#'
+#' @param df data.frame. PC scores with clinical data (df_res from
+#'   prepare_pca_dfs()).
+#' @param percent_var_df data.frame. % variance explained per PC.
+#' @param color character. Variable used for the colour aesthetic.
+#' @param shape character. Variable used for the shape aesthetic ("NA" = none).
+#'
+#' @return Grid of four PCA plots (PC1 vs PC2, PC3 vs PC4, PC1 vs PC3, ...)
+#'   drawn with gridExtra::grid.arrange().
 plot_pca <- function(df, percent_var_df, color, shape = "NA"){
-  #' Plot PCA giving a prcomp result object
-  #'
-  #' @param object dataframe. Dataframe with PCA results
-  #' @param percent_var_df dataframe. Dataframe with percentage of explained variances
-  #' @param color character. Variable for color aesthetics
-  #' @param shape character. Variable for shape aesthetics
-  #'
-  #' @return ggplot object
-  #'
-  
   if (shape != "NA"){
     p1 <- ggplot(data = df,
                  mapping = aes(x = PC1,

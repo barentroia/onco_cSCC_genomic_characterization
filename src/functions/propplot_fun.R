@@ -1,28 +1,26 @@
-# Function to visualize multiple imputation results derived from: https://gist.github.com/NErler/0d00375da460dd33839b98faeee2fdab
+#===============================================================================
+# Aim:      Visualize multiple imputation results: compare the proportions of
+#           categorical variables between observed and imputed data.
+# Derived 
+# from:     N. Erler (https://gist.github.com/NErler/0d00375da460dd33839b98faeee2fdab)
+# Contents: - propplot(): proportion plot of observed vs imputed categories
+# Requires: Packages mice, reshape2, RColorBrewer and ggplot2
+# Usage:    Sourced by the multiple imputation scripts in src/clinical
+#===============================================================================
 
-# Compare proportions in categorical variables between observed and imputed data
-# visually (using ggplot)
-#
-# Parameters:
-# x: mids object (from mice)
-# formula: formula describing which variables to plot
-# facet: either "wrap" for facet_wrap or "grid" for facet_grid
-# ...: additional parameters passed to theme()
-#
-# Note: if the formula is not specified, all imputed categorical variables are
-# plotted. 
-# 
-# A formula has the structure:
-# categorical variables ~ faceting variables | color variable
-# 
-# By default, .imp (imputation set identifier) will be used as color variable.
-#
-# This function uses the following packages:
-# - mice
-# - reshape2
-# - RColorBrewer
-# - ggplot2
-
+#' Proportion plot of observed vs imputed categorical variables
+#'
+#' If formula is not specified, all imputed categorical variables are
+#' plotted. A formula has the structure
+#' `categorical variables ~ faceting variables | color variable`.
+#' By default, .imp (imputation set identifier) is used as colour variable.
+#'
+#' @param x mids object. Output of mice::mice().
+#' @param formula formula. Variables to plot (see above); optional.
+#' @param facet character. "wrap" for facet_wrap or "grid" for facet_grid.
+#' @param ... Additional arguments passed to ggplot2::theme().
+#'
+#' @return ggplot object.
 propplot <- function(x, formula, facet = "wrap", ...) {
   library(ggplot2)
   

@@ -1,23 +1,64 @@
-# Auxilliary functions for model evaluation:
-# ------------------------------------------------------------------------------
-# Bootstrap_validation_inner function: This function performs bootstrap validation of a model fitted on data ds_x. Only inner loop, no confidence intervals are provided.
-# @param feat_sel_method: character indicating which type of model should be applied to the data
-# @param topfeats: number to indicate the amount of top features in feature selection, default NA
-# @param ds_x_list: list of datasets of DvP and non_DvPwith all of the features, columns should be features with colnames identifying the features
-# @param ds_additional: dataset with outcomes of interest and matching informations
-# @param ds_x_counts_list: list of count datasets of DvP and non_DvPwith all of the features, columns should be features with colnames identifying the features
-# @param outcome_name: character vector corresponding to the column name of the outcome of interest in the ds_additional dataframe
-# @param fup_name: character vector corresponding to the column name of the follow-up time of the outcome of interest in the ds_additional dataframe
-# @param weights_name: character vector corresponding to the column name of the weights in the ds_additional dataframe
-# @param tp: number indicating the timepoint of interest
-# @param B: number of bootstrap validations
-# @param seed: number indicating starting seed
-# @param verbose: logical indicating if current bootstrap run should be indicated
-# @param model_params: vector of model parameters
-# @param bad_samples: logical indicating if bootstrap cross-validation is performed
-# @param remove_bad_samples: logical indicating if samples with bad QCs should be
-# @param genes_oi: genes of interest to keep in feature selection, on default not used
-# removed during the training, if TRUE, separate performances will be computed for these samples
+#===============================================================================
+# Aim:      Bootstrap internal validation of late integration models for
+#           SCCore-GEP development: late feature integration (combined selected
+#           DvP and non-DvP genes) and late prediction integration (stacked
+#           DvP and non-DvP model predictions).
+# Contents: - bootstrap_validation(): wrapper; also runs the outer bootstrap
+#             loop for confidence intervals
+#           - bootstrap_validation_inner(): bootstrap model development and
+#             optimism correction
+#           - input_arg_check(): check alignment of the input data
+#           - get_performance_measures(): (weighted) AUC and C-index
+# Requires: build_model() (build_models.r) and apply_model() (apply_models.r)
+# Usage:    Sourced by Model_input_processing.R when source_type == "late"
+#===============================================================================
+
+#' Bootstrap internal validation of a late integration model (inner loop only)
+#'
+#' GEP models are first developed separately on each gene set in ds_x_list
+#' (DvP and non-DvP genes). Their selected genes are then combined into one
+#' final model (late feature integration, combi_type "stackedGEP") or their
+#' predictions are used as input of a final model (late prediction
+#' integration, combi_type "Stacked"). The whole procedure is repeated in B
+#' bootstrap samples (resampling case-control sets, or samples when
+#' model.params$unmatched is set)
+#' to obtain Harrell, .632 and .632+ optimism-corrected performance.
+#'
+#' @param feat_sel_method character. Feature selection method per gene set
+#'   ("deseq2" or "none").
+#' @param topfeats integer. Number of top features to select per gene set.
+#' @param model_method character. Model type of the per-gene-set models
+#'   (e.g. "coxnet", "RSF"); the final model type is model.params$model_final.
+#' @param ds_x_list list of data.frames. Log2 expression data (samples x
+#'   genes), one element per gene set (DvP, non-DvP).
+#' @param ds_additional data.frame. Clinical data (outcome, follow-up,
+#'   weights, Set_id and stratification variables).
+#' @param ds_x_counts_list list of data.frames. Raw counts (genes x samples),
+#'   one element per gene set, used for DESeq2 feature selection.
+#' @param outcome_name character. Column in ds_additional with the event
+#'   indicator (0/1).
+#' @param fup_name character. Column in ds_additional with the follow-up time.
+#' @param weights_name character. Column in ds_additional with the NCC
+#'   sampling weights.
+#' @param tp numeric. Time point (years) at which predictions are evaluated.
+#' @param B integer. Number of bootstrap repetitions.
+#' @param seed integer. Seed for reproducibility.
+#' @param verbose logical. Print the current bootstrap repetition.
+#' @param model.params list. Model parameters, including combi_type
+#'   ("Stacked" or "stackedGEP") and model_final.
+#' @param bad_samples character vector. IDs of samples with bad QC, excluded
+#'   from training.
+#' @param remove_bad_samples logical. Kept for compatibility; bad QC samples
+#'   are always removed when listed in bad_samples.
+#' @param genes_oi character vector or NULL. Genes always kept in feature selection.
+#'
+#' @return Named list with the apparent performance, "Optimism-Corrected",
+#'   "Optimism-Corrected0632", "Optimism-Corrected0632plus", the per-bootstrap
+#'   optimism/apparent/OOB results, "Model_fit" (final model on the full
+#'   dataset), "Model_fit_pre" (per-gene-set models), "OOB_predicted_probs",
+#'   "Bootstrap_coefficients", "stacked_bootstrap_models"
+#'   and, for Cox models, the final models refitted with the average
+#'   lambda/alpha (Final_model2, Final_model_list, final_selected_genes).
 bootstrap_validation_inner <- function(feat_sel_method,topfeats,model_method,ds_x_list, ds_additional, ds_x_counts_list,outcome_name,fup_name,weights_name,tp,B,seed,verbose=TRUE,model.params=NULL,bad_samples=NA,remove_bad_samples=F,genes_oi=NULL){
   
   # Set seed to ensure reproducibility
@@ -76,7 +117,8 @@ bootstrap_validation_inner <- function(feat_sel_method,topfeats,model_method,ds_
     DvP = predictions_list[[1]],
     non_DvP= predictions_list[[2]]
   )
-
+  print(fit_train_list[[1]]$coefficients)
+ print(fit_train_list[[2]]$coefficients)
   # 1.4.2 Combine the features from DvP and non_DvP
   meta_input_features_comb <- unique(c(names(fit_train_list[[1]]$coefficients),names(fit_train_list[[2]]$coefficients)))
   meta_input_features_comb <- meta_input_features_comb[meta_input_features_comb != "(Intercept)"]
@@ -126,6 +168,7 @@ bootstrap_validation_inner <- function(feat_sel_method,topfeats,model_method,ds_
     model.params = model.params,
     seed = seed)
   }
+  print(fit_stacked_train$coefficients)
   # 1.6 Get model predictions and performance in the training cohort
   predictions_model_orig <- fit_stacked_train$predictions
   perf_orig_on_orig <- get_performance_measures(predictions_model_orig, ds_y_train, outcome_name, fup_name, weights_name, tp, fit_stacked_train$recalibration_cox_lp,model.params)
@@ -138,7 +181,7 @@ bootstrap_validation_inner <- function(feat_sel_method,topfeats,model_method,ds_
     if (grepl("coxnet|glmnet", model_method)) {
       alpha_list <- vector("list", B)
     }}
-  #To keep average lambda and alpha for the stacked final model
+  # To keep average lambda and alpha for the stacked final model
   if (grepl("model", model.params$model_final)) {
     lambda1se_list2 <- vector("list", B)
     alpha_list2 <- vector("list", B)
@@ -170,7 +213,7 @@ bootstrap_validation_inner <- function(feat_sel_method,topfeats,model_method,ds_
       if (grepl("coxnet|glmnet", model_method)) {
         alpha_list[[brep]] <- list() 
       }}
-    #save results for each dataset
+    # Save results for each dataset
     meta_input_bootstrap <- list()
     meta_input_bootstrap_GEP <- list()
     ds_x_train_oob_list <- list()
@@ -311,6 +354,14 @@ bootstrap_validation_inner <- function(feat_sel_method,topfeats,model_method,ds_
     #save the predictions and coefficients from each dataset at a specific bootstrap
     meta_input_bootstrap[[names(ds_x_list)[k]]] <- fit_bootstrap_list[[k]]$predictions
     meta_input_bootstrap_GEP[[names(ds_x_list)[k]]] <- names(fit_bootstrap_list[[k]]$coefficients)
+    print("1 is dvp and 2 is non-dvp")
+    print(paste0("alpha for bootstrap", k) )
+    print(fit_bootstrap_list[[k]]$alpha)
+    print(paste0("$fitted_model$lambda.1se", k) )
+    print(fit_bootstrap_list[[k]]$fitted_model$lambda.1se)
+    print(paste0("coefficients", k) )
+    print(fit_bootstrap_list[[k]]$fitted_model$coefficients)
+
     # Bootstrap results
     bootstrap_coeffs[[brep]][[names(ds_x_list)[k]]] <- fit_bootstrap_list[[k]][["coefficients"]]
     feats_to_keep_bootstrap <- fit_bootstrap_list[[k]]$preselected_feats
@@ -325,7 +376,7 @@ bootstrap_validation_inner <- function(feat_sel_method,topfeats,model_method,ds_
     
     # 2.7 Completed bootstrapping for each dataset. 
     #     Prepare the input for the stacked model.
-    # The combined predicitons
+    # The combined predictions
     meta_input_bootstrap <- as.data.frame(meta_input_bootstrap)
     # The combined selected genes
     combined_selected_genes_bs <- unique(unlist(meta_input_bootstrap_GEP))
@@ -688,7 +739,7 @@ if (grepl("coxnet|glmnet|lasso|ridge", base_model_method)) {
       seed = seed)
     } }
 
-# 10. Results
+# 4.7 Results
 res <- list("fit_bootstrap_all" = fit_bootstrap_all,
             "Apparent_performance"= perf_orig_on_orig,
             "Optimism-Corrected" = int_val_estimates,
@@ -718,24 +769,42 @@ if (grepl("coxnet|glmnet|lasso|ridge", base_model_method)) {
 }
 
 
-# Bootstrap_validation function: This function performs bootstrap validation of a model fitted on data ds_x. It can produce confidence intervals for optimism-corrected estimates, if cis = TRUE and the number of outer loops are provided.
-# @param model_method: character indicating which type of model should be applied to the data
-# @param ds_x: dataset with all of the features, columns should be features with colnames identifying the features
-# @param ds_additional: dataset with outcomes of interest and matching informations
-# @param ds_x_counts: counts dataset with all of the features, columns should be features with colnames identifying the features
-# @param outcome_name: character vector corresponding to the column name of the outcome of interest in the ds_additional dataframe
-# @param fup_name: character vector corresponding to the column name of the follow-up time of the outcome of interest in the ds_additional dataframe
-# @param weights_name: character vector corresponding to the column name of the weights in the ds_additional dataframe
-# @param tp: number indicating the timepoint of interest
-# @param B_inner: number of bootstrap repetitions in the inner loop
-# @param seed: number indicating starting seed
-# @param cis: logical indicating whether confidence intervals should be computed (TRUE) or not (FALSE)
-# @param B_outer: number of bootstrap repetitions in the outer loop, for computation of confidence intervals
-# @param model_params: vector of model parameters
-# @param bad_samples: logical indicating if bootstrap cross-validation is performed
-# @param remove_bad_samples: logical indicating if samples with bad QCs should be removed during the training,
-# if TRUE, separate performances will be computed for these samples
-# @param genes_oi: list of genes of interest
+#' Bootstrap validation wrapper, optionally with outer bootstrap for CIs
+#'
+#' Without CIs (cis = FALSE) this checks the input and runs
+#' bootstrap_validation_inner() once. With cis = TRUE and B_outer given, it
+#' runs a batch of 10 outer bootstrap repetitions (B_outer - 9 to B_outer):
+#' in each, the dataset is resampled and the full inner bootstrap procedure
+#' is repeated, and the .632+ estimates are collected to compute 95%
+#' percentile confidence intervals. Batches are combined afterwards by
+#' process_CI_sccore_gep.R.
+#'
+#' @param feat_sel_method character. Feature selection method ("deseq2" or "none").
+#' @param topfeats integer. Number of top features to select per gene set.
+#' @param model_method character. Model type of the per-gene-set models.
+#' @param ds_x_list list of data.frames. Log2 expression data per gene set.
+#' @param ds_additional data.frame. Clinical data.
+#' @param ds_x_counts_list list of data.frames. Raw counts per gene set.
+#' @param outcome_name character. Column in ds_additional with the event
+#'   indicator (0/1).
+#' @param fup_name character. Column in ds_additional with the follow-up time.
+#' @param weights_name character. Column in ds_additional with the NCC
+#'   sampling weights.
+#' @param tp numeric. Time point (years) at which predictions are evaluated.
+#' @param B_inner integer. Number of inner bootstrap repetitions.
+#' @param seed integer. Seed for reproducibility.
+#' @param cis logical. Compute outer bootstrap confidence intervals.
+#' @param B_outer integer or NULL. Last outer repetition of this batch.
+#' @param model.params list. Model parameters (see bootstrap_validation_inner()).
+#' @param bad_samples character vector. IDs of samples with bad QC.
+#' @param remove_bad_samples logical. See bootstrap_validation_inner().
+#' @param genes_oi character vector or NULL. Genes always kept in feature selection.
+#' @param dir_results character or NULL. Results directory (currently unused).
+#'
+#' @return Without CIs: output of bootstrap_validation_inner(). With CIs: list
+#'   with "CIs Optimism-Corrected0632plus" (mean and 2.5/97.5% quantiles) and
+#'   "Estimates Optimism-Corrected0632plus" (all outer estimates). Both also
+#'   contain "Bootstrap_parameters" (the input arguments).
 bootstrap_validation <- function(feat_sel_method,topfeats,model_method,ds_x_list, ds_additional, ds_x_counts_list,outcome_name,fup_name,weights_name,tp,B_inner,seed,cis=FALSE,B_outer=NULL,model.params=NULL,bad_samples=NA,remove_bad_samples=F,genes_oi=NULL,dir_results = NULL){
   argg <- as.list(environment())
   argg <- argg[setdiff(names(argg),c("ds_x_list", "ds_additional", "ds_x_counts_list"))]  # Set seed to ensure reproducibility
@@ -846,13 +915,20 @@ bootstrap_validation <- function(feat_sel_method,topfeats,model_method,ds_x_list
 }
 
 
-# input_arg_check function: This function checks the input argument of the user
-# @param ds_x_list: list of bailey and remaining datasets with all of the features, columns should be features with colnames identifying the features
-# @param ds_additional: dataset with outcomes of interest and matching informations
-# @param ds_x_counts_list: list of bailey and remaining counts datasets with all of the features, columns should be features with colnames identifying the features
-# @param outcome_name: character vector corresponding to the column name of the outcome of interest in the ds_additional dataframe
-# @param fup_name: character vector corresponding to the column name of the follow-up time of the outcome of interest in the ds_additional dataframe
-# @param weights_name: column name of the weights in ds_y
+#' Check the input of bootstrap_validation()
+#'
+#' Stops with an informative error if the outcome, follow-up or weight
+#' columns are missing, or if samples/features are not aligned between the
+#' expression, count and clinical datasets of each gene set.
+#'
+#' @param ds_x_list list of data.frames. Log2 expression data per gene set.
+#' @param ds_y data.frame. Clinical data.
+#' @param ds_x_counts_list list of data.frames. Raw counts per gene set.
+#' @param outcome_name character. Outcome column in ds_y.
+#' @param fup_name character. Follow-up time column in ds_y.
+#' @param weights_name character. Weights column in ds_y.
+#'
+#' @return Called for its side effects (error or confirmation message).
 input_arg_check <- function(ds_x_list, ds_y, ds_x_counts_list,
                             outcome_name, fup_name, weights_name) {
   #  Clinical / outcome data checks
@@ -893,14 +969,25 @@ input_arg_check <- function(ds_x_list, ds_y, ds_x_counts_list,
   message("All datasets passed input checks.")
 }
 
-# get_performance_measures function: This function computes performance metrics for predictions given in model_predictions
-# @param model_predictions: numeric vector with risk predictions from the model (higher prediction = higher risk)
-# @param ds_additional: dataset with outcomes of interest and matching informations
-# @param outcome: character vector corresponding to the column name of the outcome of interest in the ds dataframe
-# @param outcome_FU: character vector corresponding to the column name of the follow-up time of the outcome of interest in the ds dataframe
-# @param weights_name: character vector corresponding to the column name of the weights in the ds dataframe
-# @param tp: number indicating the timepoint of interest
-# @param lps: numeric vector with linear predictors from the model
+#' Compute discrimination performance of model predictions
+#'
+#' Computes (weighted) AUC, (weighted) C-index and, where applicable, the
+#' median case-control difference in predictions per set, for the whole
+#' dataset ("All") and for each available stratification variable.
+#'
+#' @param model_predictions numeric vector. Predicted risks (higher = higher
+#'   risk), in the same order as the rows of ds.
+#' @param ds data.frame. Clinical data with outcome, follow-up, weights and
+#'   stratification variables.
+#' @param outcome character. Outcome column in ds.
+#' @param outcome_FU character. Follow-up time column in ds.
+#' @param weights_name character. Weights column in ds.
+#' @param tp numeric. Time point of interest (not used in the computation).
+#' @param lps numeric vector or NULL. Linear predictors of the model.
+#' @param model.params list. Model parameters; if model.params$unmatched is
+#'   set, metrics that require case-control pairs are skipped.
+#'
+#' @return data.frame in long format with columns variable, group, metric and value.
 get_performance_measures <- function(model_predictions, ds, outcome, outcome_FU, weights_name, tp, lps,model.params){
   
   stopifnot(length(model_predictions) == nrow(ds))
@@ -1083,3 +1170,4 @@ get_performance_measures <- function(model_predictions, ds, outcome, outcome_FU,
   # Return results
   perf_ds
 }
+#-------------------------------------------------------------------------------

@@ -1,11 +1,14 @@
-#-------------------------------------------------------------------------------
-# Aim: Differentially expressed genes in discovery
-# Input: discovery sequencing data object
-# Output: DEG
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Differential gene expression analysis (DESeq2) in the D-SQUAME
+#           discovery dataset (N = 378): metastasis (case vs control) and
+#           immunosuppression (yes vs no), both adjusted for sample type.
+# Input:    - Discovery_data_set_N378.rds (output_data_dir)
+# Output:   - DESeq2 results (csv, RData) per design in results_dir/dgea/<design>
+# Requires: code_dir, results_dir, output_data_dir (main.R)
+# Usage:    Sourced from main.R
+#===============================================================================
 
-
-# Load libraries
+# 1. Load libraries
 #-------------------------------------------------------------------------------
 library(tidyverse)
 library(ggbeeswarm)
@@ -21,19 +24,18 @@ conflicts_prefer(base::intersect)
 conflicts_prefer(dplyr::filter)
 conflicts_prefer(dplyr::select)
 conflicts_prefer(base::as.factor)
+conflicts_prefer(base::setdiff)
+
 #-------------------------------------------------------------------------------
 
-
-
-# General setup
+# 2. General setup
 #-------------------------------------------------------------------------------
 # output folder
 output_dgea_dir <- file.path(results_dir, "dgea")
 if (!dir.exists(output_dgea_dir)){dir.create(output_dgea_dir, recursive = T)}
 #-------------------------------------------------------------------------------
 
-
-# DGEA 
+# 3. DGEA
 #-------------------------------------------------------------------------------
 discovery_data <- readRDS(paste0(output_data_dir,"/Discovery_data_set_N378.rds"))
 

@@ -1,17 +1,32 @@
-#-------------------------------------------------------------------------------
-# Aim: Compute threshold-based metrics in D-SQUAME validation dataset
-# Author: L.Pozza
-# Input: D-SQUAME validation merged imputed clinical data validation + recalibrated SCCore-GEP predictions
-# Output: Threshold-based performances at different SCCore-GEP risk thresholds
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Compute threshold-based metrics (weighted SE, SP, PPV, NPV, ...) of
+#           the recalibrated SCCore-GEP predictions in the D-SQUAME validation
+#           dataset, at every observed risk threshold, overall and per BWH and
+#           AJCC8 stage group.
+# Author:   L. Pozza
+# Input:    - D-SQUAME validation clinical data (e3_clinical), merged imputed
+#             clinical data and NCC weights (e7_weights)
+#           - Recalibrated SCCore-GEP predictions (output of recalibration.R)
+# Output:   - threshold_based_metrics.csv in
+#             results_dir/intermediate/validation/d_squame
+# Requires: results_dir (main.R) and config.R paths
+# Usage:    Sourced from main.R
+#===============================================================================
 
-# Functions
+# 1. Functions
 #-------------------------------------------------------------------------------
-# computeDiscMetricsBinary: function to calculate discriminative ability metrics: SE, SP, NPV, PPV, for binary data 
-# @param cutoff: prediction threshold
-# @param outcome_num: numeric vector with status indicator, 0 = without event of interest, 1 = with event of interest
-# @param predictions: numeric vector with model risk predictions
-# @param weights: if required output is weighted metrics, weights is a numeric vector with weights of each observation.
+#' (Weighted) threshold-based metrics for a binary classification
+#'
+#' Samples with prediction > cutoff are classified as high risk.
+#'
+#' @param cutoff numeric. Threshold on the predictions.
+#' @param outcome_num numeric vector. Outcome (1 = event, 0 = no event).
+#' @param predictions numeric vector. Predicted risks.
+#' @param weights numeric vector or NULL. Sample weights (NULL = unweighted).
+#'
+#' @return Named numeric vector: weighted FP, FN, TP, TN, SE, SP, PPV, NPV,
+#'   likelihood ratios, proportions/numbers at low and high risk, positives
+#'   and negatives.
 computeDiscMetricsBinary <- function(cutoff, outcome_num, predictions, weights = NULL){
   
   # Obtain labels for the desired cutoff
@@ -96,20 +111,26 @@ computeDiscMetricsBinary <- function(cutoff, outcome_num, predictions, weights =
   return(performance_metrics)
 }
 
+#' Threshold-based metrics per stage group
+#'
+#' Computes the metrics of computeDiscMetricsBinary() at each threshold
+#' within each stratum of BWH and AJCC8 (and their groupings T1-T2a,
+#' T1, T1-T2, ...).
+#'
+#' @param df data.frame. Merged imputed clinical data with BWH_staging and
+#'   AJCC_staging.
+#' @param weights_df data.frame. Outcome, weights and predictions per patient.
+#' @param ids_var character. Patient ID column used to join the data.
+#' @param status_var character. Outcome column.
+#' @param time_var character. Follow-up time column.
+#' @param weights_var character. Weights column.
+#' @param preds_var character. Predictions column.
+#' @param tp numeric. Time point (not used in the computation).
+#' @param thresholds numeric vector. Thresholds at which metrics are computed.
+#'
+#' @return Long data.frame with stratification_system, stratum, metric,
+#'   value and threshold; only thresholds that occur in the stratum are kept.
 compute_thresh_based_metrics_strata <- function(df, weights_df, ids_var, status_var, time_var, weights_var, preds_var, tp, thresholds){
-  #' Compute discrminiative ability metrics and their standard error
-  #'
-  #' @param df dataframe. Dataframe
-  #' @param ids_var string. String indicating column with samples IDs
-  #' @param status_var string. String indicating column with outcomes
-  #' @param time_var string. String indicating column with follow-up time
-  #' @param weights_var string. String indicating column with weights
-  #' @param preds_var numeric vector. Vector with predictions
-  #' @param tp number. Number indicating at which timepoint the data should be truncated at
-  #' @param thresholds number vector. Threshold values at which discrminative ability metrics are computed
-  #' 
-  #' @return Discrminative ability metrics and their standard error
-  
   df_gathered <- df %>%
     full_join(weights_df %>% select(-all_of(time_var)), by = ids_var) %>%
     mutate(BWH_staging_T1T2a_T2bT3 = ifelse(BWH_staging %in% c("T1", "T2a"), "T1-T2a", "T2b-T3"),
@@ -142,7 +163,7 @@ compute_thresh_based_metrics_strata <- function(df, weights_df, ids_var, status_
 }
 #-------------------------------------------------------------------------------
 
-# Load libraries
+# 2. Load libraries
 #-------------------------------------------------------------------------------
 library(conflicted)
 library(openxlsx)
@@ -155,7 +176,7 @@ library(prodlim)
 conflicted::conflicts_prefer(dplyr::filter)
 #-------------------------------------------------------------------------------
 
-# Filenames and settings
+# 3. Filenames and settings
 #-------------------------------------------------------------------------------
 # Clinical data
 clinical_fn <- e3_clinical
@@ -169,9 +190,10 @@ tp <- 5
 # Output folder
 output_dir <- file.path(results_dir, "intermediate", "validation", "d_squame")
 if (!dir.exists(output_dir)){dir.create(output_dir, recursive = T)}
+if (!dir.exists(output_dir)){dir.create(output_dir, recursive = T)}
 #-------------------------------------------------------------------------------
 
-# Read data
+# 4. Read data
 #-------------------------------------------------------------------------------
 # Clinical data
 clinical <- read.csv(clinical_fn)
@@ -182,7 +204,7 @@ lr_weights <- read.csv(lr_weights_fn)
 sccoregep <- read.csv(sccoregep_fn)
 #-------------------------------------------------------------------------------
 
-# Preprocess clinical and predictions data
+# 5. Preprocess clinical and predictions data
 #-------------------------------------------------------------------------------
 # Keep only biopsy for patients with double sample type, add column with weights
 df <- clinical %>%
@@ -193,7 +215,7 @@ df <- clinical %>%
   left_join(sccoregep %>% select(Skyline_ID, sccore_gep_cox_calibrated), by = "Skyline_ID")
 #-------------------------------------------------------------------------------
 
-# Compute threshold-based metrics at different thresholds
+# 6. Compute threshold-based metrics at different thresholds
 #-------------------------------------------------------------------------------
 # Define variables
 outcome_var <- "Metastasis_num"
@@ -230,7 +252,7 @@ thresh_based_metrics_mimp_merged_comb <- thresh_based_metrics_all %>%
   arrange(stratification_system, stratum, threshold)
 #-------------------------------------------------------------------------------
 
-# Save results
+# 7. Save results
 #-------------------------------------------------------------------------------
 # Dataframe with results
 write.csv(thresh_based_metrics_mimp_merged_comb, file.path(output_dir, "threshold_based_metrics.csv"), row.names = F)

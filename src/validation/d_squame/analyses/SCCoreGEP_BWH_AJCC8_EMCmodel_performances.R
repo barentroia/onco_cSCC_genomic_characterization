@@ -1,29 +1,42 @@
-#-------------------------------------------------------------------------------
-# Aim: Compute SCCore-GEP, BWH, AJCC8, EMC model performances in D-SQUAME validation dataset
-# Author: L.Pozza, adapted from J. Traets
-# Input: D-SQUAME validation TPM & imputed clinical data + SCCore-GEP model
-# Output: Performances of SCCore-GEP, BWH, AJCC8, EMC model in D-SQUAME validation dataset
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Compute discrimination performances (weighted/unweighted AUC and
+#           C-index) of SCCore-GEP, BWH, AJCC8 and the EMC model in the
+#           D-SQUAME validation dataset, overall and per subgroup, for the
+#           patient subset selected with subset_oi.
+# Author:   L. Pozza, adapted from J. Traets
+# Input:    - D-SQUAME validation clinical data (e3_clinical) and multiple
+#             imputation object (results_dir/intermediate/clinical)
+#           - NCC weights (e7_weights)
+#           - SCCore-GEP predictions (output of apply_SCCoreGEP.R)
+# Output:   Written to results_dir/intermediate/validation/d_squame:
+#           - SCCoreGEP_BWH_AJCC8_EMCmodel_performances_<subset>_with_imputation.csv
+#           - ..._<subset>_max_samples.csv and ..._<subset>_complete_cases.csv
+#           - SCCoreGEP_predictions.csv (rewritten with Skyline_ID,
+#             Patient_ID_SKY and sccore_gep; same predictions as
+#             apply_SCCoreGEP.R)
+# Requires: code_dir, results_dir (main.R); subset_oi ("t1t2a" = BWH T1-T2a,
+#           "t1t2" = AJCC8 T1-T2, otherwise entire dataset); config.R paths
+# Usage:    Sourced from main.R (once per subset)
+#===============================================================================
 
-# Functions
+# 1. Functions
 #-------------------------------------------------------------------------------
+#' Compute AUC and C-index stratified by (imputed) variables
+#'
+#' @param df dataframe. Dataframe with imputed values
+#' @param preds_df dataframe. Dataframe with predictions and weights
+#' @param ids_var string. String indicating column with samples IDs
+#' @param setids_var string. String indicating column with set IDs
+#' @param status_var string. String indicating column with status
+#' @param time_var string. String indicating column with time to status
+#' @param weight_var string. String indicating column with weights
+#' @param strat_vars string vector. Strings indicating stratification variables
+#' @param nboot integer. Number of bootstrap repetitions
+#' @param bwh_subset_to_keep vector. String indicating BWH stages to keep
+#' @param ajcc8_subset_to_keep vector. String indicating AJCC8 stages to keep
+#'
+#' @return weighted/unweighted AUC and C-index and corresponding standard errors
 compute_perfs <- function(df, preds_df, ids_var, setids_var, status_var, time_var, weight_var, strat_vars, nboot, bwh_subset_to_keep, ajcc8_subset_to_keep){
-  #' Compute AUC and C-index stratified by (imputed) variables
-  #'
-  #' @param df dataframe. Dataframe with imputed values
-  #' @param preds_df dataframe. Dataframe with predictions and weights
-  #' @param ids_var string. String indicating column with samples IDs
-  #' @param setids_var string. String indicating column with set IDs
-  #' @param status_var string. String indicating column with status
-  #' @param time_var string. String indicating column with time to status
-  #' @param weight_var string. String indicating column with weights
-  #' @param strat_var string vector. Strings indicating stratification variables
-  #' @param nboot integer. Number of bootstrap repetitions
-  #' @param bwh_subset_to_keep vector. String indicating BWH stages to keep
-  #' @param ajcc8_subset_to_keep vector. String indicating AJCC8 stages to keep
-  #' 
-  #' @return weighted/unweighted AUC and C-index and corresponding standard errors
-  
   if (!is.null(bwh_subset_to_keep)){
     df_mod <- df %>%
        filter(BWH_staging %in% bwh_subset_to_keep)
@@ -86,7 +99,7 @@ compute_perfs <- function(df, preds_df, ids_var, setids_var, status_var, time_va
 }
 #-------------------------------------------------------------------------------
 
-# Load libraries
+# 2. Load libraries
 #-------------------------------------------------------------------------------
 #url <- "https://cran.r-project.org/src/contrib/psfmi_1.4.0.tar.gz"
 #install.packages(url, repos = NULL, type = "source")
@@ -103,9 +116,10 @@ library(boot)
 library(WeightedROC)
 library(intsurv)
 conflicted::conflicts_prefer(dplyr::filter)
+conflicted::conflicts_prefer(base::rbind)
 #-------------------------------------------------------------------------------
 
-# Filenames and settings
+# 3. Filenames and settings
 #-------------------------------------------------------------------------------
 # Clinical data
 clinical_fn <- e3_clinical
@@ -135,12 +149,12 @@ output_dir <- file.path(results_dir, "intermediate", "validation", "d_squame")
 if (!dir.exists(output_dir)){dir.create(output_dir, recursive = T)}
 #-------------------------------------------------------------------------------
 
-# Source functions
+# 4. Source functions
 #-------------------------------------------------------------------------------
 source(file.path(code_dir, "functions", "boot_metrics_se_ci.R"))
 #-------------------------------------------------------------------------------
 
-# Read data
+# 5. Read data
 #-------------------------------------------------------------------------------
 # Clinical data
 clinical <- read.csv(clinical_fn)
@@ -154,7 +168,7 @@ lr_weights <- read.csv(lr_weights_fn)
 sccoregep_preds <- read.csv(sccoregep_preds_fn)
 #-------------------------------------------------------------------------------
 
-# Preprocess data
+# 6. Preprocess data
 #-------------------------------------------------------------------------------
 model_predictions_df <- sccoregep_preds %>%
         full_join(clinical %>%
@@ -166,7 +180,7 @@ model_predictions_df <- sccoregep_preds %>%
         select(-Metastasis, -Skyline_ID)
 #-------------------------------------------------------------------------------
 
-# Compute discrimination performances in imputed datasets
+# 7. Compute discrimination performances in imputed datasets
 #-------------------------------------------------------------------------------
 # Identify stratification variables (in imputed datasets)
 strat_vars_mimp <- c("All", "Type_of_material_bin", "AJCC_staging", "BWH_staging")
@@ -290,7 +304,7 @@ if (is.null(subset_oi)){
 }
 #-------------------------------------------------------------------------------
 
-# Compute discrimination performances in entire dataset (complete cases and max samples)
+# 8. Compute discrimination performances in entire dataset (complete cases and max samples)
 #-------------------------------------------------------------------------------
 model_predictions_df_mod <- model_predictions_df %>%
         left_join(clinical %>% select(Patient_ID_SKY, AJCC_staging, BWH_staging, CP_risk),
@@ -371,7 +385,7 @@ perf_complete_cases <- model_predictions_df_mod %>%
      select(-auc_ci95, -cindex_ci95, -wauc_ci95, -wcindex_ci95)
 #-------------------------------------------------------------------------------
 
-# Save results
+# 9. Save results
 #-------------------------------------------------------------------------------
 write.csv(model_predictions_df  %>%
               full_join(clinical %>% select(Patient_ID_SKY, Skyline_ID),

@@ -1,46 +1,56 @@
-#-------------------------------------------------------------------------------
-# Aim: Visualize clusters found on RNA-seq data
-# Author: B. Rentroia Pacheco
-# Input: Cluster solution found in rna_seq_01
-# Output: Several clustering solutions performed by the cola R package
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Visualize and interpret the RNA-seq clusters found with cola
+#           (Figure 4A-B and Supplementary Figure 7A-C): heatmaps, pathway
+#           enrichment, survival curves, projection of biopsies onto the
+#           excision clusters, and association with clinico-pathological
+#           variables.
+# Author:   B. Rentroia Pacheco
+# Input:    - cola results of rna_seq_01_clustering_analyses.R (sourced here)
+#           - WES genomic summary p13_mutation_data for genomic annotations
+# Output:   Written to results_dir/rna_seq/clustering_cola (prefix rna_seq_02_):
+#           - Heatmaps of excisions and biopsies (pdf/png + source data xlsx)
+#           - PCA projection biopsy vs excision and survival curves (pdf/xlsx)
+#           - ORA results and association tests with the clusters (xlsx)
+# Requires: code_dir, results_dir (main.R) and config.R paths
+# Usage:    Sourced from main.R
+#===============================================================================
 
-# Setup - Load libraries & define output directory
+# 1. Setup - Load libraries & define output directory
 #-------------------------------------------------------------------------------
-#library(cola)
-#library(openxlsx)
-#library(plyr)
-#library(dplyr)
-#library(DESeq2)
-#library(clusterProfiler)
-#library(msigdbr)
-#library(tibble)
-#library(rtracklayer)
-#library(fgsea)
-#library(biomaRt)
-#library(pheatmap)
-#library(ggplot2)
-#library(ggalluvial)
-#library(officer)
-#library(patchwork)
-#library(survival)
-#library(survminer)
-#library(gtsummary)
+library(cola)
+library(openxlsx)
+library(plyr)
+library(dplyr)
+library(DESeq2)
+library(clusterProfiler)
+library(msigdbr)
+library(tibble)
+library(rtracklayer)
+library(fgsea)
+library(biomaRt)
+library(pheatmap)
+library(ggplot2)
+library(ggalluvial)
+library(officer)
+library(patchwork)
+library(survival)
+library(survminer)
+library(gtsummary)
+conflicted::conflicts_prefer(gtsummary::mutate)
 
 # If running this script by itself, run config.R to define file paths
-# Load useful functions:
-
 # Output directory:
 output_dir <- file.path(results_dir,"rna_seq","clustering_cola")
 
-# Cluster discovery step:
+# Cluster discovery step: 
 source(file.path(code_dir,"functions","rnaseq_cluster_interpretation.R"))
 source(file.path(code_dir,"rna_seq","analyses","rna_seq_01_clustering_analyses.R"))
 
 # Use data from WES:
-genomic_df = read.xlsx("/home/cscc_project_230717/brentroia/data/S04_02_03_genomic_df_summary.xlsx")
+genomic_df <- read.xlsx(p13_mutation_data)
+#-------------------------------------------------------------------------------
 
-# Fetch final cola solution and also important intermediate data for clustering:
+# 2. Fetch final cola solution and also important intermediate data for clustering
 #-------------------------------------------------------------------------------
 output_folder_cola = file.path(output_dir,"scaled","VST","adj","Excision")
 rl = readRDS(file = file.path(output_folder_cola,"/rds_file.RDS"))
@@ -49,8 +59,9 @@ chosen_k_cola = 3
 
 # Fetch corresponding input matrix:
 vt_mat_model_input = readRDS(file =  file.path(output_dir,"scaled","VST","VST_input.RDS"))
+#-------------------------------------------------------------------------------
 
-# Preprocess output from cola and add sample cluster names:
+# 3. Preprocess output from cola and add sample cluster names
 #-------------------------------------------------------------------------------
 # Convert cola output into dataframe:
 df_cola_cl = data.frame(Sample_id = rownames(res@object_list[[as.character(chosen_k_cola)]]$class_df),
@@ -65,14 +76,15 @@ df_clusters<- df_cola_cl %>%
     "Basal-like",
     "Mesenchymal-like"
   )))
+#-------------------------------------------------------------------------------
 
-# Preprocess clinical and rnaseq datasets: 
+# 4. Preprocess clinical and rnaseq datasets
 #-------------------------------------------------------------------------------
 # This can be omitted if running this script after rna_seq_01_clustering_analyses.R
 source(file.path(code_dir,"rna_seq","analyses","rna_seq_a1_preprocessing.R"))
 #-------------------------------------------------------------------------------
 
-# Cluster annotations:
+# 5. Cluster annotations
 #-------------------------------------------------------------------------------
 # Process the annotations defined in rna_seq_a1_preprocessing.R script:
 # Select rows and columns of interest:
@@ -92,8 +104,9 @@ annotation_cols$Cluster_cola <- factor(
   ordered = TRUE
 )
 annotation_cols$Differentiation = ifelse(is.na(annotation_cols$Differentiation),"NA",as.character(annotation_cols$Differentiation))
+#-------------------------------------------------------------------------------
 
-# Stratifications by sample type:
+# 6. Stratifications by sample type
 #-------------------------------------------------------------------------------
 # We want to check the clusters in biopsies and excisions separately, so we need to stratify the input matrix by sample type:
 inp_mat = as.matrix(vt_mat_model_input)
@@ -106,8 +119,9 @@ inp_mat_exc_adjusted = adjust_matrix(inp_mat_exc) # Note: we dont use adjust_mat
 i.mat_type_biop = which(annotation_cols$Biopsy_excision_2f=="Biopsy")
 inp_mat_biop = inp_mat[,i.mat_type_biop]
 inp_mat_biop_adjusted = t(apply(inp_mat_biop,1,adjust_outlier)) # Note: we dont use adjust_matrix because we dont need to remove columns, it's just for visualization
+#-------------------------------------------------------------------------------
 
-# Visualize clustering solution:
+# 7. Visualize clustering solution
 #-------------------------------------------------------------------------------
 # Cluster visualized with cola:
 top_n = 1000
@@ -236,8 +250,9 @@ dev.off()
 
 ### Source data:
 write.xlsx(heatmap_df,file.path(output_dir,"/rna_seq_02_heatmap_excisions.xlsx"))
+#-------------------------------------------------------------------------------
 
-# Pathway enrichment analysis:
+# 8. Pathway enrichment analysis
 #-------------------------------------------------------------------------------
 ## Before performing enrichment analysis, we need to define the universe genes:
 ensembl_genes <-rownames(vt_mat_model_input) 
@@ -257,8 +272,9 @@ universe_genes = gene_symbols
 for(annot in c("H","H_C2_C7_C8","H_C7_C8","C7","C6")){
   ORA_gene_clusters(annot,sign_res,output_folder_cola,universe_genes)
 }
+#-------------------------------------------------------------------------------
 
-# Survival curves:
+# 9. Survival curves
 #-------------------------------------------------------------------------------
 # On the excisions first:
 stopifnot(all(rownames(annotation_cols)==rownames(clinical)))
@@ -368,8 +384,14 @@ centroids_df <- pca_old_df %>%
   summarise(across(all_of(pcs), mean), .groups = "drop")
 
 # Assign clusters based on euclidean distance in the excision cohort:
-# For a single sample's PC coordinates (x), compute its distance to every centroid
-# and return the name of the closest cluster.
+#' Assign a sample to the nearest cluster centroid
+#'
+#' @param x numeric vector. PC coordinates of one sample.
+#' @param centroids data.frame. Cluster centroids (PC columns + cluster).
+#' @param pcs character vector. PC columns used for the distance.
+#' @param dist character. Distance metric; only "euclidean" is implemented.
+#'
+#' @return Name of the closest cluster.
 assign_cluster <- function(x, centroids,pcs,dist) {
   if(dist=="euclidean"){
     d <- apply(centroids[,pcs], 1, function(c) {
@@ -592,8 +614,9 @@ pheatmap(heatmap_df_all[,col_order] ,scale = "row",
 
 new_samples_by_cluster_all =  Map(c, new_samples_by_cluster_excisions, new_samples_by_cluster)
 generate_surv_curv_hm_clusters(NULL,NULL,clinical, i.subset=1:nrow(clinical), cluster_labels=NULL,def_sample_clusters=new_samples_by_cluster_all,color_scheme=annotation_colors[["Cluster_cola"]],max_time=5,title_plot="All")
+#-------------------------------------------------------------------------------
 
-# Association tests between clinico-pathological variables and the clusters:
+# 10. Association tests between clinico-pathological variables and the clusters
 #-------------------------------------------------------------------------------
 # Tidy up clinical data:
 association_df_not_imputed = annotation_df%>%

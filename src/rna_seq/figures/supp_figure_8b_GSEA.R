@@ -1,11 +1,13 @@
-#-------------------------------------------------------------------------------
-# Aim: Generate supp figure 8b
-# Input: DEG immunocompromised bin
-# Output: GSEA barplot
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Generate Supplementary Figure 8B: GSEA (MSigDB Hallmarks) of
+#           immunosuppressed versus immunocompetent patients.
+# Input:    - DGEA results ~Biopsy_excision+Immunosupp_bin (results_dir/dgea)
+# Output:   - GSEA bar plot (pdf) and fgsea results (csv) in results_dir/publication
+# Requires: code_dir, results_dir (main.R); DGEA_discovery.R run first
+# Usage:    Sourced from main.R
+#===============================================================================
 
-
-# Load libraries
+# 1. Load libraries
 #-------------------------------------------------------------------------------
 library(tidyverse)
 library(biomaRt)
@@ -26,8 +28,7 @@ conflicts_prefer(dplyr::select)
 conflicts_prefer(base::as.factor)
 #-------------------------------------------------------------------------------
 
-
-# Load data
+# 2. Load data
 #-------------------------------------------------------------------------------
 output_dgea_dir <- file.path(results_dir, "dgea")
 if (!dir.exists(output_dgea_dir)){dir.create(output_dgea_dir, recursive = T)}
@@ -39,16 +40,15 @@ dgea_immuno <- read.csv(paste0(output_dgea_dir,"/~Biopsy_excision+Immunosupp_bin
 
 #-------------------------------------------------------------------------------
 
-
-# Generate figures
+# 3. Generate figures
 #-------------------------------------------------------------------------------
 set.seed(123)
 
-##### Hallmarks GSEA
+# Hallmark gene sets (Ensembl IDs)
 all_gene_sets = msigdbr(species = "Homo sapiens",category = "H")
 H_pathways = split(x = all_gene_sets$ensembl_gene, f = all_gene_sets$gs_name)
 
-# Immunosuppressed versus controls
+# Immunosuppressed versus immunocompetent
 runGSEA(dgea_immuno,
         pathways_to_test = H_pathways,
         design = "~Sample_type+Immunosupp_bin",

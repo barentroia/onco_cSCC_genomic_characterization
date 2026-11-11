@@ -1,19 +1,21 @@
-#-------------------------------------------------------------------------------
-# Aim: Cluster RNA-seq data
-# Author: B. Rentroia Pacheco
-# Input: Clinical and RNA-seq count data
-# Output: Several clustering solutions performed by the cola R package
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Unsupervised clustering of the RNA-seq data of the D-SQUAME
+#           discovery dataset with multiple consensus clustering methods
+#           (cola R package), for all samples and for biopsies/excisions
+#           separately.
+# Author:   B. Rentroia Pacheco
+# Input:    - Clinical and RNA-seq count data, preprocessed by
+#             rna_seq_a1_preprocessing.R
+# Output:   - cola reports and result objects (rds_file.RDS) in
+#             results_dir/rna_seq/clustering_cola/scaled/VST/adj/<subset>
+# Requires: code_dir, results_dir (main.R) and config.R paths
+# Usage:    Sourced by rna_seq_02_clusters_visualization_interpretation.R
+#===============================================================================
 
-# Setup - Load libraries & define output directory
+# 1. Setup - Load libraries & define output directory
 #-------------------------------------------------------------------------------
-# Libraries
-#library(cola)
-#library(openxlsx)
-#library(plyr)
-#library(dplyr)
-#library(DESeq2)
-
+# Libraries (other packages are loaded by rna_seq_a1_preprocessing.R)
+library(cola)
 # If running this script by itself, run config.R to define file paths
 
 # Output folder:
@@ -21,14 +23,14 @@ output_dir <- file.path(results_dir,"rna_seq","clustering_cola")
 if (!dir.exists(output_dir)){dir.create(output_dir, recursive = T)}
 #-------------------------------------------------------------------------------
 
-# Preprocess clinical and rnaseq datasets 
+# 2. Preprocess clinical and rnaseq datasets
 #-------------------------------------------------------------------------------
 source(file.path(code_dir,"rna_seq","analyses","rna_seq_a1_preprocessing.R"))
 #-------------------------------------------------------------------------------
 
-# Generate input matrices for clustering and annotations:
+# 3. Generate input matrices for clustering and annotations
 #-------------------------------------------------------------------------------
-# Create VST dataset:
+# Variance stabilizing transformation (VST) of the counts:
 ## Create dds object:
 dds <- DESeqDataSetFromMatrix(countData = round(counts),
                               colData = clinical,
@@ -39,14 +41,16 @@ dds <- estimateSizeFactors(dds)
 ## Variance stabilization
 vt <- vst(dds, blind = T)
 vt_mat <-assay(vt)
+# Remove genes flagged during preprocessing
 vt_mat_model_input <-vt_mat[which(!rownames(vt_mat) %in% feats_to_exlude), ]
 
 ## Include other run of hierarchical clustering with a different setting:
 register_partition_methods(
   hclust_wd = function(mat, k) cutree(hclust(dist(t(mat), method = "euclidean"),method="ward.D2"), k)
 )
+#-------------------------------------------------------------------------------
 
-# Clustering using the cola package:
+# 4. Clustering using the cola package
 #-------------------------------------------------------------------------------
 # Settings to run cola:
 scale_df = "scaled" # Scale input matrix
@@ -94,7 +98,7 @@ for(subset_smp in c("All","Excision","Biopsy")){
   
   # Run cola:
   print(dim(inp_mat))
-  rl = run_all_consensus_partition_methods(inp_mat , cores = 4,anno =annotation_cols[i.mat_type,],anno_col = annotation_colors,scale_rows = scale_df_comm,top_value_method=c("SD","MAD","CV"))
+  rl = run_all_consensus_partition_methods(inp_mat , cores = 4,anno =annotation_cols[i.mat_type,],anno_col = annotation_colors[colnames(annotation_cols)],scale_rows = scale_df_comm,top_value_method=c("SD","MAD","CV"))
   
   # Save report:
   cola_report(rl, output_dir = output_folder_cola, cores = 2)
@@ -103,3 +107,4 @@ for(subset_smp in c("All","Excision","Biopsy")){
   saveRDS(rl,file = file.path(output_folder_cola,"rds_file.RDS"))
 }
       
+#-------------------------------------------------------------------------------

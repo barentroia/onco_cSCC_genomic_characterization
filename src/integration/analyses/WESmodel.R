@@ -1,17 +1,17 @@
-#---------------------------------------------------
-# Aim: Prepare WES model development pipeline unmatched with 126 samples
-# Author: R.Ruiter
-# Input: Clinical dataset
-#        WES mutation dataset
-#        Bailey DvP gene list
-#        QC exclusion list
-#        samples that overlap between WES and GEP data
-# Output: WES model on 126 samples
+#===============================================================================
+# Aim:      Develop and bootstrap-validate the WES-only model on the 126
+#           unmatched samples: prefiltered WES mutation (pathway) and copy
+#           number features in a Coxnet model (alpha = 0.5).
+# Author:   R. Ruiter
+# Input:    - Clinical, RNA-seq and WES data, loaded via Model_input_processing.R
+#           - Bad QC sample list
+# Output:   - WES_model_robj.rds in dir_results_intermediate_integration
+# Requires: dir_scripts_functions, dir_results_intermediate_integration,
+#           experiment_setup = "integration" (main.R) and config.R paths
+# Usage:    Sourced from main.R
+#===============================================================================
 
-
-#-------------------------------------------------------------------------------
-
-# 0. Load R library
+# 1. Settings
 #-------------------------------------------------------------------------------
 conflicted::conflict_prefer("select", "dplyr")
 conflicted::conflict_prefer("filter", "dplyr")
@@ -21,23 +21,54 @@ conflicted::conflict_prefer("intersect", "base")
 
 #-------------------------------------------------------------------------------
 
-# 1. Input parameters and global functions
+# 2. Helper functions and output directory
 #-------------------------------------------------------------------------------
+#' Strip the version suffix from Ensembl gene IDs (keep first 15 characters)
+#'
+#' @param x character vector. Ensembl gene IDs, e.g. "ENSG00000141510.18".
+#'
+#' @return character vector of unversioned IDs.
 strp <- function(x) substr(x, 1, 15)
+
+
+#' Subset an expression matrix to the genes of a signature
+#'
+#' @param signature_gene_ids character vector. Gene IDs of the signature.
+#' @param expression_matrix matrix/data.frame. Expression data (samples x genes).
+#'
+#' @return The expression matrix restricted to the signature genes present.
 subset_expression_matrix <- function(signature_gene_ids, expression_matrix) {
   genes_in_matrix <- intersect(signature_gene_ids, colnames(expression_matrix))
   return(expression_matrix[, genes_in_matrix, drop = FALSE])
 }
 
-# Removing X and Y chr cnv
+#' Remove copy number features of the sex chromosomes (chrX, chrY)
+#'
+#' @param df data.frame. Mutation/copy number features.
+#'
+#' @return df without columns starting with "chrX" or "chrY".
 remove_sex_chr_cnv <- function(df) {
   df %>% select(-matches("^chr[XY]"))
 }
 
-# Mutation feature prefiltering
-# pathways: keep if altered in >= 3 samples
-# CNAs: keep if altered in >= 10 samples
-# CNA features: keep if prevalence >= 20%
+#' Prefilter WES mutation and copy number features
+#'
+#' Filtering is based on good QC samples only: pathways are kept if altered
+#' in at least min_pathway_samples samples; copy number alterations (CNAs)
+#' are kept if altered in at least min_cna_samples samples and in at least
+#' min_final_prop of the samples. Covariates in keep_covariates are kept.
+#'
+#' @param df data.frame. Mutation/CNA features (samples x features).
+#' @param clinical_data data.frame. Clinical data with SkylineDx.ID.
+#' @param samples_bad_qcs data.frame. Bad QC samples (Skyline_ID column).
+#' @param remove_badQCsamples logical. Exclude bad QC samples when filtering.
+#' @param pathway_cols character vector. Columns that are pathway features.
+#' @param min_pathway_samples integer. Minimum number of altered samples per pathway.
+#' @param min_cna_samples integer. Minimum number of altered samples per CNA.
+#' @param min_final_prop numeric. Minimum proportion of altered samples per CNA.
+#' @param keep_covariates character vector. Columns always kept.
+#'
+#' @return data.frame with all samples, the covariates and the kept features.
 prefilter_mutation_data <- function(df,
                                     clinical_data,
                                     samples_bad_qcs,
@@ -173,10 +204,10 @@ if (!dir.exists(dir_results_intermediate_integration)){dir.create(dir_results_in
 
 #-------------------------------------------------------------------------------
 
-# 1.1 Input parameters
+# 3. Input parameters
 #-------------------------------------------------------------------------------
 # Workflow settings
-## Remove samples wityh bad QCs
+## Remove samples with bad QCs
 remove_badQCsamples <- T
 ## Input genes of interest
 genes_of_interest <- NULL
@@ -212,16 +243,16 @@ source_type <- "early"
 
 #-------------------------------------------------------------------------------
 
-# 2. Source file with experiment set-up
+# 4. Source file with experiment set-up
 #-------------------------------------------------------------------------------
-# expression and clinical information is needed to overlap sampels with mutation data
+# Expression and clinical information is needed to overlap samples with mutation data
 source(file.path(dir_scripts_functions, "Model_input_processing.R"))
 
 #-------------------------------------------------------------------------------
 
-# 3. Make input mutation data
+# 5. Make input mutation data
 #-------------------------------------------------------------------------------
-# remove Chr X and Y
+# Remove chrX and chrY copy number features
 mutation_data_amp_del <- remove_sex_chr_cnv(mutation_data_amp_del)
 
 mutation_data_list <- list(
@@ -240,7 +271,7 @@ models_params <- list(mut_alphas = c(0.5),
 
 #-------------------------------------------------------------------------------
 
-# 4. Run workflow and save results
+# 6. Run workflow and save results
 #-------------------------------------------------------------------------------
 for (mut_type in names(mutation_data_list_no_cellularity)) {
   message("Running mutation type: ", mut_type)
@@ -291,3 +322,4 @@ for (md in models){
     
   }
 }}}
+#-------------------------------------------------------------------------------

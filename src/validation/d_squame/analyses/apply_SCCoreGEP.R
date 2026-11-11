@@ -1,11 +1,16 @@
-#-------------------------------------------------------------------------------
-# Aim: Apply SCCore-GEP in D-SQUAME validation dataset
-# Author: L.Pozza, adapted from J. Traets
-# Input: TPM & imputed clinical data of D-SQUAME validation dataset + SCCore-GEP model
-# Output: SCCore-GEP predictions
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Apply SCCore-GEP to the D-SQUAME validation dataset and compute the
+#           predicted 5-year metastasis probability per sample.
+# Author:   L. Pozza, adapted from J. Traets
+# Input:    - D-SQUAME validation clinical data (e3_clinical), TPMs (e2_tpms)
+#             and NCC weights (e7_weights)
+#           - Final SCCore-GEP model (coxnet_Late_feature_integration_robj.rds)
+# Output:   - SCCoreGEP_predictions.csv in results_dir/intermediate/validation/d_squame
+# Requires: results_dir (main.R) and config.R paths
+# Usage:    Sourced from main.R
+#===============================================================================
 
-# Load libraries
+# 1. Load libraries
 #-------------------------------------------------------------------------------
 library(conflicted)
 library(openxlsx)
@@ -14,9 +19,10 @@ library(survival)
 library(glmnet)
 conflicted::conflicts_prefer(dplyr::filter)
 conflicted::conflicts_prefer(pROC::roc)
+conflicted::conflicts_prefer(base::setdiff)
 #-------------------------------------------------------------------------------
 
-# Filenames and settings
+# 2. Filenames and settings
 #-------------------------------------------------------------------------------
 # Clinical data
 clinical_fn <- e3_clinical
@@ -34,7 +40,7 @@ output_dir <- file.path(results_dir, "intermediate", "validation", "d_squame")
 if (!dir.exists(output_dir)){dir.create(output_dir, recursive = T)}
 #-------------------------------------------------------------------------------
 
-# Read data
+# 3. Read data
 #-------------------------------------------------------------------------------
 # Clinical data
 clinical <- read.csv(clinical_fn)
@@ -49,9 +55,15 @@ tpms <- read.table(tpms_fn, sep = "\t", header = T)
 sccoregep <- readRDS(sccoregep_fn)
 #-------------------------------------------------------------------------------
 
-# Preprocess gene expression data
+# 4. Preprocess gene expression data
 #-------------------------------------------------------------------------------
 # Fix sample names to match expression data
+
+#' Prefix sample IDs that start with a number with "X" (as read.table does)
+#'
+#' @param vec character vector. Sample IDs.
+#'
+#' @return character vector of IDs matching the expression data column names.
 add_x_if_number <- function(vec) {ifelse(grepl("^[0-9]", vec), paste0("X", vec), vec)}
 clinical$tpm_sample_id <- add_x_if_number(clinical$Skyline_ID)
 clinical$tpm_sample_id <- gsub("-",".",clinical$tpm_sample_id)
@@ -72,16 +84,16 @@ tpms_filtered <- tpms %>% select(clinical$tpm_sample_id) %>% t() %>% as.data.fra
 tpms_filtered_log <- log2(tpms_filtered + 1)
 #-------------------------------------------------------------------------------
 
-# Apply SCCore-GEP model
+# 5. Apply SCCore-GEP model
 #-------------------------------------------------------------------------------
 # Prepare data
-## Removing .# behind gene ids, not in feats_to_keep/x_fitted_model?
+## Remove the version suffix of the gene IDs to match the model features
 newx_data <- tpms_filtered_log
 colnames(newx_data) <- sub("\\..*", "", colnames(newx_data))
 final_fitted_model_sccoregep <- sccoregep$Final_model2$fitted_model
 feats_to_keep_sccoregep <- colnames(sccoregep$Final_model2$x_fitted_model)
 newx_data_sccoregep <- as.matrix(newx_data[,feats_to_keep_sccoregep])
-# Apply model
+# Apply model: predicted event probability at tp (1 - survival)
 sccore_gep_preds <- 1 - as.vector(summary(survfit(final_fitted_model_sccoregep, 
                                      s = "lambda.1se", 
                                      x = sccoregep$Final_model2$x_fitted_model, 
@@ -99,7 +111,7 @@ model_predictions_df <- as.data.frame(sccore_gep_preds) %>%
         select(Skyline_ID, Patient_ID_SKY, sccore_gep)
 #-------------------------------------------------------------------------------
 
-# Save results
+# 6. Save results
 #-------------------------------------------------------------------------------
 write.csv(model_predictions_df, file.path(output_dir, "SCCoreGEP_predictions.csv"), row.names = F)
 #-------------------------------------------------------------------------------

@@ -1,27 +1,37 @@
-#-------------------------------------------------------------------------------
-# Aim: Compute performances of BWH, AJCC8, EMC model in D-SQUAME discovery cohort
-# Author: L.Pozza
-# Input: Clinical data of D-SQUAME discovery cohort
-# Output: Performances of BWH, AJCC8, EMC model in D-SQUAME discovery cohort
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Compute discrimination performances (weighted/unweighted AUC and
+#           C-index) of the BWH and AJCC8 staging systems and the EMC model
+#           in the D-SQUAME discovery dataset, overall and per subgroup.
+#           SCCore-GEP performance in discovery comes from internal validation.
+# Author:   L. Pozza
+# Input:    - D-SQUAME discovery clinical data (p3_clinical)
+#           - Multiple imputation object and merged imputed dataset
+#             (results_dir/intermediate/clinical)
+#           - NCC weights (p10_weights)
+# Output:   Written to results_dir/intermediate/sccore_gep:
+#           - BWH_AJCC8_EMCmodel_performances_with_imputation.csv (pooled
+#             over imputed datasets)
+#           - ..._max_samples.csv and ..._complete_cases.csv (no imputation)
+# Requires: code_dir, results_dir (main.R) and config.R paths
+# Usage:    Sourced from main.R
+#===============================================================================
 
-# Functions
+# 1. Functions
 #-------------------------------------------------------------------------------
+#' Compute AUC and C-index stratified by (imputed) variables
+#'
+#' @param df dataframe. Dataframe with imputed values
+#' @param weights_df dataframe. Dataframe with weights
+#' @param ids_var string. String indicating column with samples IDs
+#' @param setids_var string. String indicating column with set IDs
+#' @param status_var string. String indicating column with status
+#' @param time_var string. String indicating column with time to status
+#' @param weight_var string. String indicating column with weights
+#' @param strat_vars string vector. Strings indicating stratification variables
+#' @param nboot integer. Number of bootstrap repetitions
+#'
+#' @return weighted/unweighted AUC and C-index and corresponding standard errors
 compute_perfs <- function(df, weights_df, ids_var, setids_var, status_var, time_var, weight_var, strat_vars, nboot){
-  #' Compute AUC and C-index stratified by (imputed) variables
-  #'
-  #' @param df dataframe. Dataframe with imputed values
-  #' @param weights_df dataframe. Dataframe with weights
-  #' @param ids_var string. String indicating column with samples IDs
-  #' @param setids_var string. String indicating column with set IDs
-  #' @param status_var string. String indicating column with status
-  #' @param time_var string. String indicating column with time to status
-  #' @param weight_var string. String indicating column with weights
-  #' @param strat_var string vector. Strings indicating stratification variables
-  #' @param nboot integer. Number of bootstrap repetitions
-  #' 
-  #' @return weighted/unweighted AUC and C-index and corresponding standard errors
-  
   # Preprocess data
   df_gathered <- df %>%
     inner_join(weights_df, by = ids_var) %>%
@@ -77,7 +87,7 @@ compute_perfs <- function(df, weights_df, ids_var, setids_var, status_var, time_
 }
 #-------------------------------------------------------------------------------
 
-# Load libraries
+# 2. Load libraries
 #-------------------------------------------------------------------------------
 #url <- "https://cran.r-project.org/src/contrib/psfmi_1.4.0.tar.gz"
 #install.packages(url, repos = NULL, type = "source")
@@ -97,7 +107,7 @@ conflicts_prefer(pROC::roc)
 conflicts_prefer(pROC::var)
 #-------------------------------------------------------------------------------
 
-# Filenames and settings
+# 3. Filenames and settings
 #-------------------------------------------------------------------------------
 # Clinical data
 clinical_fn <- p3_clinical
@@ -112,12 +122,12 @@ output_dir <- file.path(results_dir, "intermediate", "sccore_gep")
 if (!dir.exists(output_dir)){dir.create(output_dir, recursive = T)}
 #-------------------------------------------------------------------------------
 
-# Source functions
+# 4. Source functions
 #-------------------------------------------------------------------------------
 source(file.path(code_dir, "functions", "boot_metrics_se_ci.R"))
 #-------------------------------------------------------------------------------
 
-# Read data
+# 5. Read data
 #-------------------------------------------------------------------------------
 # Clinical
 clinical_samples <- openxlsx::read.xlsx(clinical_fn, sheet = "Request Lara - Samples (values)")
@@ -129,7 +139,7 @@ clinical_mimp_merged <- read.csv(clinical_mimp_merged_fn)
 lr_weights <- read.csv(lr_weights_fn)
 #-------------------------------------------------------------------------------
 
-# Preprocess data
+# 6. Preprocess data
 #-------------------------------------------------------------------------------
 lr_weights <- lr_weights %>%
   rename(Skyline_ID = SkylineDx.ID) %>%
@@ -143,7 +153,7 @@ lr_weights <- lr_weights %>%
          AJCC8_imputed_merged = AJCC_8)
 #-------------------------------------------------------------------------------
 
-# Compute discrimination performances in imputed datasets
+# 7. Compute discrimination performances in imputed datasets
 #-------------------------------------------------------------------------------
 # Identify stratification variables (in imputed datasets)
 strat_vars <- c("All", "Immunosuppressed", "Sample_type_bin", "BWH_imputed_merged", "AJCC8_imputed_merged", "BWH_bin_imputed_merged", "AJCC8_bin_imputed_merged")
@@ -213,7 +223,7 @@ for (i in 1:nrow(perf_mimp_strata)){
 pooled_perf_mimp <- pooled_perf_mimp %>% bind_rows()
 #-------------------------------------------------------------------------------
 
-# Compute discrimination performances in entire dataset (complete cases and max samples)
+# 8. Compute discrimination performances in entire dataset (complete cases and max samples)
 #-------------------------------------------------------------------------------
 clinical_df_mod <- complete(mimp, 0) %>%
   mutate(Metastasis_num = ifelse(Metastasis == "Case", 1, 0),
@@ -287,7 +297,7 @@ perf_complete_cases <- clinical_df_mod %>%
   select(-auc_ci95, -cindex_ci95, -wauc_ci95, -wcindex_ci95)
 #-------------------------------------------------------------------------------
 
-# Save results
+# 9. Save results
 #-------------------------------------------------------------------------------
 write.csv(pooled_perf_mimp,
           file.path(output_dir, "BWH_AJCC8_EMCmodel_performances_with_imputation.csv"),
@@ -298,4 +308,4 @@ write.csv(perf_max_samples,
 write.csv(perf_complete_cases,
           file.path(output_dir, "BWH_AJCC8_EMCmodel_performances_complete_cases.csv"),
           row.names = F)
-#--------
+#-------------------------------------------------------------------------------

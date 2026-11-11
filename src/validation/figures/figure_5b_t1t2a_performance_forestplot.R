@@ -1,11 +1,18 @@
-#-------------------------------------------------------------------------------
-# Aim: Plot of SCCore-GEP performance in T1-T2a subset of D-SQUAME validation and Nassir et al. datasets
-# Author: L.Pozza
-# Input: SCCore-GEP performances
-# Output: Figure 5B: forest plot of SCCore-GEP performances in T1-T2a D-SQUAME validation and Nassir et al. datasets
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Generate Figure 5B: forest plot of the performances of SCCore-GEP,
+#           BWH and AJCC8 in the BWH T1-T2a subsets of the D-SQUAME validation
+#           and Nassir et al. datasets.
+# Author:   L. Pozza
+# Input:    - D-SQUAME validation performances, T1-T2a subset
+#             (SCCoreGEP_BWH_AJCC8_EMCmodel_performances_t1t2a_with_imputation.csv)
+#           - Nassir et al. performances (SCCoreGEP_BWH_performances_max_samples.csv)
+# Output:   - figure_5b_t1t2a_performance_forestplot.pdf and _source_data.csv
+#             in results_dir/publication
+# Requires: code_dir, results_dir (main.R)
+# Usage:    Sourced from main.R
+#===============================================================================
 
-# Load libraries
+# 1. Load libraries
 #-------------------------------------------------------------------------------
 library(conflicted)
 library(tidyverse)
@@ -14,7 +21,7 @@ library(patchwork)
 conflicted::conflicts_prefer(dplyr::filter)
 #-------------------------------------------------------------------------------
 
-# Filenames and settings
+# 2. Filenames and settings
 #-------------------------------------------------------------------------------
 # File with results
 res_dsquame_fn <- file.path(results_dir, "intermediate", "validation", "d_squame", "SCCoreGEP_BWH_AJCC8_EMCmodel_performances_t1t2a_with_imputation.csv")
@@ -25,18 +32,19 @@ output_dir <- file.path(results_dir, "publication")
 if (!dir.exists(output_dir)){dir.create(output_dir, recursive = T)}
 #-------------------------------------------------------------------------------
 
-# Source functions
+# 3. Source functions
 #-------------------------------------------------------------------------------
 source(file.path(code_dir, "functions", "colors.R"))
+
 #-------------------------------------------------------------------------------
 
-# Read data
+# 4. Read data
 #-------------------------------------------------------------------------------
 res_dsquame <- read.csv(res_dsquame_fn)
 res_nassir <- read.csv(res_nassir_fn)
 #-------------------------------------------------------------------------------
 
-# Prepare data for forest plot
+# 5. Prepare data for forest plot
 #-------------------------------------------------------------------------------
 # D-SQUAME
 df_dsquame <- res_dsquame %>%
@@ -112,7 +120,7 @@ fp_df <- fp_df_dsquame %>%
     arrange(unique_label)
 #-------------------------------------------------------------------------------
 
-# Forest plot
+# 6. Forest plot
 #-------------------------------------------------------------------------------
 # Identify header rows for separator lines
 header_positions <- which(fp_df$label %in% fp_df$label[fp_df$category %in% c("header")])
@@ -147,7 +155,7 @@ fp <- p_table + p_forest +
   plot_layout(widths = c(2, 3))
 #-------------------------------------------------------------------------------
 
-# Source data that needs to be saved
+# 7. Source data that needs to be saved
 #-------------------------------------------------------------------------------
 source_data_df <- fp_df %>%
   mutate(Dataset = ifelse(grepl("D-SQUAME", unique_label), "D-SQUAME", "Nassir et al.")) %>%
@@ -162,7 +170,7 @@ source_data_df <- fp_df %>%
   arrange(Dataset, Model)
 #-------------------------------------------------------------------------------
 
-# Save results
+# 8. Save results
 #-------------------------------------------------------------------------------
 write.csv(source_data_df, file.path(output_dir, "figure_5b_t1t2a_performance_forestplot_source_data.csv"), row.names = F)
 pdf(file.path(output_dir, "figure_5b_t1t2a_performance_forestplot.pdf"),

@@ -139,9 +139,9 @@ pts_with_SBS_32=read.csv(file.path(dir_results_script,"Data","SigProfilerAssignm
 # Repeat previous points with new classification of immunosuppressed patients:
 dir_results_script = file.path(dir_results,"01_Mutations_summary",IS_classification)
 sample_summary$IS.at.cSCC.updatedS32 = ifelse(sample_summary$Sample.ID%in%gsub("S","",pts_with_SBS_32),"Yes",sample_summary$IS.at.cSCC)
-#source(file.path(dir_scripts,"wes","04_01_01_MML_summaries.R"))
+source(file.path(dir_scripts,"wes","04_01_01_MML_summaries.R"))
 dir_results_script = file.path(dir_results,"02_Mutational_signatures")
-#source(file.path(dir_scripts,"wes","04_01_02_MML_Mutational_signatures.R"))
+source(file.path(dir_scripts,"wes","04_01_02_MML_Mutational_signatures.R"))
 
 # Cancer Gene Analyses - Figure 2:
 dir_results_script = file.path(dir_results,"03_Cancer_gene_analysis")

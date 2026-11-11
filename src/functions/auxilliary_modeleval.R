@@ -1,23 +1,61 @@
-# Auxilliary functions for model evaluation:
-# ------------------------------------------------------------------------------
-# Bootstrap_validation_inner function: This function performs bootstrap validation of a model fitted on data ds_x. Only inner loop, no confidence intervals are provided.
-# @param feat_sel_method: character indicating which type of model should be applied to the data
-# @param topfeats: number to indicate the amount of top features in feature selection, default NA
-# @param ds_x: dataset with all of the features, columns should be features with colnames identifying the features
-# @param ds_additional: dataset with outcomes of interest and matching informations
-# @param ds_x_counts: counts dataset with all of the features, columns should be features with colnames identifying the features
-# @param outcome_name: character vector corresponding to the column name of the outcome of interest in the ds_additional dataframe
-# @param fup_name: character vector corresponding to the column name of the follow-up time of the outcome of interest in the ds_additional dataframe
-# @param weights_name: character vector corresponding to the column name of the weights in the ds_additional dataframe
-# @param tp: number indicating the timepoint of interest
-# @param B: number of bootstrap validations
-# @param seed: number indicating starting seed
-# @param verbose: logical indicating if current bootstrap run should be indicated
-# @param model_params: vector of model parameters
-# @param bad_samples: logical indicating if bootstrap cross-validation is performed
-# @param remove_bad_samples: logical indicating if samples with bad QCs should be
-# @param genes_oi: genes of interest to keep in feature selection, on default not used
-# removed during the training, if TRUE, separate performances will be computed for these samples
+#===============================================================================
+# Aim:      Bootstrap internal validation of survival models built on a single
+#           gene set: DvP genes, non-DvP genes or early integration of both.
+# Contents: - bootstrap_validation(): wrapper with input check
+#           - bootstrap_validation_inner(): bootstrap model development and
+#             optimism correction
+#           - input_arg_check(): check alignment of the input data
+#           - get_performance_measures(): (weighted) AUC and C-index
+# Requires: build_model() (build_models.r) and apply_model() (apply_models.r)
+# Usage:    Sourced by Model_input_processing.R when source_type == "early"
+#===============================================================================
+
+#' Bootstrap internal validation of a model (inner loop only)
+#'
+#' Fits the model on the full (good QC) dataset to obtain the apparent
+#' performance, then repeats feature selection and model fitting in B
+#' bootstrap samples (resampling whole case-control sets in the matched design,
+#' or individual samples when model.params$unmatched is set). Each bootstrap
+#' model is evaluated on the bootstrap sample, the full dataset and the
+#' out-of-bag (OOB) samples to obtain Harrell optimism-corrected, .632 and
+#' .632+ performance estimates. For Cox models a final model is refitted with
+#' the average lambda.1se and alpha over the bootstrap repetitions.
+#' No confidence intervals are computed here (see bootstrap_validation()).
+#'
+#' @param feat_sel_method character. Feature selection method passed to
+#'   build_model() ("deseq2" or "none").
+#' @param topfeats integer. Number of top features to select; NA if not used.
+#' @param model_method character. Model type passed to build_model()
+#'   (e.g. "coxnet", "RSF").
+#' @param ds_x data.frame. Log2 expression data (samples x genes).
+#' @param ds_additional data.frame. Clinical data (outcome, follow-up,
+#'   weights, Set_id and stratification variables), rows aligned with ds_x.
+#' @param ds_x_counts data.frame. Raw counts (genes x samples), used for
+#'   DESeq2 feature selection.
+#' @param outcome_name character. Column in ds_additional with the event
+#'   indicator (0/1).
+#' @param fup_name character. Column in ds_additional with the follow-up time.
+#' @param weights_name character. Column in ds_additional with the NCC
+#'   sampling weights.
+#' @param tp numeric. Time point (years) at which predictions are evaluated.
+#' @param B integer. Number of bootstrap repetitions.
+#' @param seed integer. Seed for reproducibility.
+#' @param verbose logical. Print the current bootstrap repetition.
+#' @param model.params list. Model parameters (e.g. alphas, unmatched).
+#' @param bad_samples character vector. IDs of samples with bad QC, which are
+#'   excluded from training.
+#' @param remove_bad_samples logical. Kept for compatibility; bad QC samples
+#'   are always removed when listed in bad_samples.
+#' @param genes_oi character vector or NULL. Genes that are always kept during
+#'   feature selection.
+#'
+#' @return Named list with, among others: "Optimism-Corrected",
+#'   "Optimism-Corrected0632", "Optimism-Corrected0632plus" (long data frames
+#'   with columns variable, group, metric, value), the optimism, apparent and
+#'   OOB results per bootstrap, "Model_fit" (model on the full dataset),
+#'   "Final_model2" (Cox model refitted with average lambda/alpha),
+#'   "Selected_Features", "Bootstrap_coefficients", "Bootstrap_alphalambda"
+#'   and "Apparent_performance".
 bootstrap_validation_inner <- function(feat_sel_method,topfeats=NA,model_method,ds_x,ds_additional,ds_x_counts,outcome_name,fup_name,weights_name,tp,B,seed,verbose=TRUE,model.params=NULL,bad_samples=NA,remove_bad_samples=F,genes_oi=NULL){
 
   # Set seed to ensure reproducibility
@@ -362,24 +400,37 @@ bootstrap_validation_inner <- function(feat_sel_method,topfeats=NA,model_method,
   return(res)
 }
 
-# Bootstrap_validation function: This function performs bootstrap validation of a model fitted on data ds_x. It can produce confidence intervals for optimism-corrected estimates, if cis = TRUE and the number of outer loops are provided.
-# @param model_method: character indicating which type of model should be applied to the data
-# @param ds_x: dataset with all of the features, columns should be features with colnames identifying the features
-# @param ds_additional: dataset with outcomes of interest and matching informations
-# @param ds_x_counts: counts dataset with all of the features, columns should be features with colnames identifying the features
-# @param outcome_name: character vector corresponding to the column name of the outcome of interest in the ds_additional dataframe
-# @param fup_name: character vector corresponding to the column name of the follow-up time of the outcome of interest in the ds_additional dataframe
-# @param weights_name: character vector corresponding to the column name of the weights in the ds_additional dataframe
-# @param tp: number indicating the timepoint of interest
-# @param B_inner: number of bootstrap repetitions in the inner loop
-# @param seed: number indicating starting seed
-# @param cis: logical indicating whether confidence intervals should be computed (TRUE) or not (FALSE)
-# @param B_outer: number of bootstrap repetitions in the outer loop, for computation of confidence intervals
-# @param model_params: vector of model parameters
-# @param bad_samples: logical indicating if bootstrap cross-validation is performed
-# @param remove_bad_samples: logical indicating if samples with bad QCs should be removed during the training,
-# if TRUE, separate performances will be computed for these samples
-# @param genes_oi: list of genes of interest
+#' Bootstrap validation wrapper
+#'
+#' Checks the input and runs bootstrap_validation_inner(). The returned list
+#' also contains the call arguments ("Bootstrap_parameters") so results can be
+#' traced back to their settings. The cis and B_outer arguments are only
+#' stored here; outer-loop confidence intervals are computed with the
+#' late integration functions (auxilliary_combination.R).
+#'
+#' @param feat_sel_method character. Feature selection method ("deseq2" or "none").
+#' @param topfeats integer. Number of top features to select.
+#' @param model_method character. Model type (e.g. "coxnet", "RSF").
+#' @param ds_x data.frame. Log2 expression data (samples x genes).
+#' @param ds_additional data.frame. Clinical data, rows aligned with ds_x.
+#' @param ds_x_counts data.frame. Raw counts (genes x samples).
+#' @param outcome_name character. Column in ds_additional with the event
+#'   indicator (0/1).
+#' @param fup_name character. Column in ds_additional with the follow-up time.
+#' @param weights_name character. Column in ds_additional with the NCC
+#'   sampling weights.
+#' @param tp numeric. Time point (years) at which predictions are evaluated.
+#' @param B_inner integer. Number of bootstrap repetitions in the inner loop.
+#' @param seed integer. Seed for reproducibility.
+#' @param cis logical. Whether confidence intervals are requested.
+#' @param B_outer integer or NULL. Number of outer bootstrap repetitions.
+#' @param model.params list. Model parameters.
+#' @param bad_samples character vector. IDs of samples with bad QC.
+#' @param remove_bad_samples logical. See bootstrap_validation_inner().
+#' @param genes_oi character vector or NULL. Genes always kept in feature selection.
+#'
+#' @return Output of bootstrap_validation_inner() plus "Bootstrap_parameters"
+#'   (list of the input arguments, without the datasets).
 bootstrap_validation <- function(feat_sel_method,topfeats,model_method,ds_x,ds_additional,ds_x_counts,outcome_name,fup_name,weights_name,tp,B_inner,seed,cis=FALSE,B_outer=NULL,model.params=NULL,bad_samples=NA,remove_bad_samples=F,genes_oi=NULL){
   argg <- as.list(environment())
   argg <- argg[setdiff(names(argg),c("ds_x", "ds_additional", "ds_x_counts"))]
@@ -407,14 +458,20 @@ bootstrap_validation <- function(feat_sel_method,topfeats,model_method,ds_x,ds_a
   return(c(bootstrap_results, "Bootstrap_parameters" = argg))
 }
 
-
-# input_arg_check function: This function checks the input argument of the user
-# @param ds_x: dataset with all of the features, columns should be features with colnames identifying the features
-# @param ds_additional: dataset with outcomes of interest and matching informations
-# @param ds_x_counts: counts dataset with all of the features, columns should be features with colnames identifying the features
-# @param outcome_name: character vector corresponding to the column name of the outcome of interest in the ds_additional dataframe
-# @param fup_name: character vector corresponding to the column name of the follow-up time of the outcome of interest in the ds_additional dataframe
-# @param weights_name: column name of the weights in ds_y
+#' Check the input of bootstrap_validation()
+#'
+#' Stops with an informative error if the outcome, follow-up or weight
+#' columns are missing, or if samples/features are not aligned between the
+#' expression, count and clinical datasets.
+#'
+#' @param ds_x data.frame. Log2 expression data (samples x genes).
+#' @param ds_y data.frame. Clinical data.
+#' @param ds_x_counts data.frame or NULL. Raw counts (genes x samples).
+#' @param outcome_name character. Outcome column in ds_y.
+#' @param fup_name character. Follow-up time column in ds_y.
+#' @param weights_name character. Weights column in ds_y.
+#'
+#' @return Called for its side effects (error or "Input check DONE." message).
 input_arg_check <- function(ds_x,ds_y,ds_x_counts,outcome_name,fup_name,weights_name){
   if(!(outcome_name %in% colnames(ds_y))){
     stop(paste0("Outcome_name: ",outcome_name," not in clinical data (ds_additional/ds_y)"))
@@ -440,14 +497,26 @@ input_arg_check <- function(ds_x,ds_y,ds_x_counts,outcome_name,fup_name,weights_
   print("Input check DONE.")
 }
 
-# get_performance_measures function: This function computes performance metrics for predictions given in model_predictions
-# @param model_predictions: numeric vector with risk predictions from the model (higher prediction = higher risk)
-# @param ds_additional: dataset with outcomes of interest and matching informations
-# @param outcome: character vector corresponding to the column name of the outcome of interest in the ds dataframe
-# @param outcome_FU: character vector corresponding to the column name of the follow-up time of the outcome of interest in the ds dataframe
-# @param weights_name: character vector corresponding to the column name of the weights in the ds dataframe
-# @param tp: number indicating the timepoint of interest
-# @param lps: numeric vector with linear predictors from the model
+#' Compute discrimination performance of model predictions
+#'
+#' Computes (weighted) AUC, (weighted) C-index and, in the matched design,
+#' the median case-control difference in predictions per set, for the whole
+#' dataset ("All") and for each available stratification variable.
+#'
+#' @param model_predictions numeric vector. Predicted risks (higher = higher
+#'   risk), in the same order as the rows of ds.
+#' @param ds data.frame. Clinical data with outcome, follow-up, weights,
+#'   Set_id/SkylineDx.ID and stratification variables.
+#' @param outcome character. Outcome column in ds.
+#' @param outcome_FU character. Follow-up time column in ds.
+#' @param weights_name character. Weights column in ds.
+#' @param tp numeric. Time point of interest (not used in the computation).
+#' @param lps numeric vector or NULL. Linear predictors of the model.
+#' @param model.params list. Model parameters; if model.params$unmatched is
+#'   set, metrics that require case-control pairs are skipped.
+#'
+#' @return data.frame in long format with columns variable, group, metric
+#'   (auc_model, wauc_model, cind_model, wcind_model, median_pair_diff) and value.
 get_performance_measures <- function(model_predictions, ds, outcome, outcome_FU, weights_name, tp, lps,model.params){
 
   stopifnot(length(model_predictions) == nrow(ds))

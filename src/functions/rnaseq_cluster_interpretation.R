@@ -1,18 +1,26 @@
-# Functions used to interpret the sample clusters
+#===============================================================================
+# Aim:      Functions to interpret the sample clusters found with cola.
+# Contents: - ORA_gene_clusters(): over-representation analysis per cluster
+#           - generate_surv_curv_hm_clusters(): KM curves per cluster
+# Requires: get_samples_in_each_cluster() and packages msigdbr,
+#           clusterProfiler, openxlsx, survival and survminer
+# Usage:    Sourced by rna_seq_02_clusters_visualization_interpretation.R
+#===============================================================================
 
-
-# Function to compute overrepresentation analysis (ORA) for genes within each cluster, using output from cola
-# 
-# Args:
-#   annot             - string specifying one or more MSigDB categories, separated by "_"
-#                        (e.g. "H_C2" for Hallmark + C2 gene sets)
-#   sign_res          - data frame that is the output of cola's function get_signatures
-#   output_folder_cola - path to the folder where the output Excel file will be saved
-#   universe_genes    - character vector of background/universe gene symbols used for
-#                        the enrichment test (denominator of the hypergeometric test)
-#
-# Output:
-#   Writes an .xlsx file with one worksheet per cluster, each containing the ORA  results
+#' Over-representation analysis (ORA) of the signature genes of each cluster
+#'
+#' Uses the cluster signature genes from cola::get_signatures() and the
+#' MSigDB gene sets of the requested categories.
+#'
+#' @param annot character. One or more MSigDB categories separated by "_"
+#'   (e.g. "H_C2" for Hallmark + C2 gene sets).
+#' @param sign_res data.frame. Output of cola::get_signatures() (Gene, km).
+#' @param output_folder_cola character. Folder where the Excel file is saved.
+#' @param universe_genes character vector. Background gene symbols used in
+#'   the hypergeometric test.
+#'
+#' @return Called for its side effect: writes an .xlsx file with one sheet
+#'   per cluster containing the ORA results.
 ORA_gene_clusters = function(annot,sign_res,output_folder_cola,universe_genes){
   # --- Step 1: Split genes by cluster ---
   # Group the significant genes by their cluster label ("km" column)
@@ -102,24 +110,22 @@ ORA_gene_clusters = function(annot,sign_res,output_folder_cola,universe_genes){
 }
 
 
-# Function to generate Kaplan-Meier survival curves comparing metastasis-free survival across
-# clusters (e.g. from a heatmap/hierarchical clustering). Returns a ggsurvplot object.
-#
-# Arguments:
-#   ph                  - hierarchical clustering object (e.g. hclust/pheatmap) passed to
-#                         get_samples_in_each_cluster() to derive cluster membership
-#   nr_clusters         - number of clusters to cut the tree into
-#   clinical_tumors_df  - clinical data frame; rownames are sample IDs (Skyline_ID),
-#                         must contain "Metastasis" and "FU_metastasis_years" columns
-#   i.subset            - optional row indices/names to restrict clinical_tumors_df to a subset
-#   cluster_labels      - optional custom names to assign to the clusters
-#   def_sample_clusters - optional pre-defined list of samples per cluster (bypasses ph clustering)
-#   color_scheme        - optional named palette mapping cluster names to colors
-#   max_time            - optional follow-up time cap (censors events beyond this horizon)
-#   title_plot          - optional plot title
-
-# Returns:
-#   A ggsurvplot object (list containing the KM plot and risk table)
+#' Kaplan-Meier curves of metastasis-free survival per sample cluster
+#'
+#' @param ph Clustering object (e.g. hclust/pheatmap) passed to
+#'   get_samples_in_each_cluster() to derive cluster membership.
+#' @param nr_clusters integer. Number of clusters to cut the tree into.
+#' @param clinical_tumors_df data.frame. Clinical data (rownames = sample
+#'   IDs) with Metastasis and FU_metastasis_years columns.
+#' @param i.subset Row indices/names to restrict clinical_tumors_df; optional.
+#' @param cluster_labels character vector. Custom cluster names; optional.
+#' @param def_sample_clusters list. Predefined samples per cluster (bypasses
+#'   ph); optional.
+#' @param color_scheme character vector. Named palette per cluster; optional.
+#' @param max_time numeric. Follow-up cap; events after it are censored; optional.
+#' @param title_plot character. Plot title.
+#'
+#' @return ggsurvplot object (KM plot and risk table).
 generate_surv_curv_hm_clusters<-function(ph,nr_clusters,clinical_tumors_df, i.subset=NULL, cluster_labels=NULL,def_sample_clusters=NULL,color_scheme=NULL,max_time=NULL,title_plot=""){
   
   # Restrict the clinical data to the requested subset of samples, if provided

@@ -1,11 +1,17 @@
-#-------------------------------------------------------------------------------
-# Aim: Plot of SCCore-GEP and EMC model performances in T1-T2a subset of D-SQUAME validation
-# Author: L.Pozza
-# Input: SCCore-GEP performances
-# Output: Figure 5B: forest plot of SCCore-GEP and EMC model performances in T1-T2a D-SQUAME validation
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Generate Figure 5C: forest plot comparing the performances of
+#           SCCore-GEP and the EMC model in the BWH T1-T2a subset of the
+#           D-SQUAME validation dataset, overall and stratified by sample type.
+# Author:   L. Pozza
+# Input:    - D-SQUAME validation performances, T1-T2a subset
+#             (SCCoreGEP_BWH_AJCC8_EMCmodel_performances_t1t2a_with_imputation.csv)
+# Output:   - figure_5c_t1t2a_emcmodel_performance_comp_forestplot.pdf and
+#             _source_data.csv in results_dir/publication
+# Requires: code_dir, results_dir (main.R)
+# Usage:    Sourced from main.R
+#===============================================================================
 
-# Load libraries
+# 1. Load libraries
 #-------------------------------------------------------------------------------
 library(conflicted)
 library(tidyverse)
@@ -14,7 +20,7 @@ library(patchwork)
 conflicted::conflicts_prefer(dplyr::filter)
 #-------------------------------------------------------------------------------
 
-# Filenames and settings
+# 2. Filenames and settings
 #-------------------------------------------------------------------------------
 # File with results
 res_fn <- file.path(results_dir, "intermediate", "validation", "d_squame", "SCCoreGEP_BWH_AJCC8_EMCmodel_performances_t1t2a_with_imputation.csv")
@@ -23,17 +29,17 @@ output_dir <- file.path(results_dir, "publication")
 if (!dir.exists(output_dir)){dir.create(output_dir, recursive = T)}
 #-------------------------------------------------------------------------------
 
-# Source functions
+# 3. Source functions
 #-------------------------------------------------------------------------------
 source(file.path(code_dir, "functions", "colors.R"))
 #-------------------------------------------------------------------------------
 
-# Read data
+# 4. Read data
 #-------------------------------------------------------------------------------
 res <- read.csv(res_fn)
 #-------------------------------------------------------------------------------
 
-# Prepare data for forest plot
+# 5. Prepare data for forest plot
 #-------------------------------------------------------------------------------
 df <- res %>%
     filter(model %in% c("CP_risk", "sccore_gep") & variable %in% c("All", "Type_of_material_bin")) %>%
@@ -74,7 +80,7 @@ fp_df <- df %>%
     arrange(unique_label)
 #-------------------------------------------------------------------------------
 
-# Forest plot
+# 6. Forest plot
 #-------------------------------------------------------------------------------
 # Identify header rows for separator lines
 header_positions <- which(fp_df$label %in% fp_df$label[fp_df$category %in% c("header")])
@@ -109,7 +115,7 @@ fp <- p_table + p_forest +
   plot_layout(widths = c(2, 3))
 #-------------------------------------------------------------------------------
 
-# Source data that needs to be saved
+# 7. Source data that needs to be saved
 #-------------------------------------------------------------------------------
 source_data_df <- df %>%
   select(variable, group, model, est, lower, upper) %>%
@@ -124,7 +130,7 @@ source_data_df <- df %>%
   arrange(`Stratification variable`, Group, Model)
 #-------------------------------------------------------------------------------
 
-# Save results
+# 8. Save results
 #-------------------------------------------------------------------------------
 write.csv(source_data_df, file.path(output_dir, "figure_5c_t1t2a_emcmodel_performance_comp_forestplot_source_data.csv"), row.names = F)
 pdf(file.path(output_dir, "figure_5c_t1t2a_emcmodel_performance_comp_forestplot.pdf"),

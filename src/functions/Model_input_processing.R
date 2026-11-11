@@ -1,25 +1,35 @@
-#---------------------------------------------------
-# Aim: Experiment setup for different experiments
-# This script aims to setup all the necessary data for the various modeling experiments.
-# Author: B. Rentroia Pacheco
-# Input: Clinical dataset
-#        TPM gene expression matrix
-#        Raw count gene expression matrix
-#        Tumor purity data
-#        QC data
-#        Bad QC sample list
-#        Sample weights
-#        Gene annotation list with biotype LncRNA or protein coding
-# Output: 
-#        Processed clinical data
-#        Prefiltered and processed TPM expression matrix
-#        Prefiltered raw count expression matrix
-#        QC exclusion list
+#===============================================================================
+# Aim:      Shared experiment set-up for all modelling experiments. Loads and
+#           preprocesses clinical, gene expression, QC and (optionally) WES
+#           mutation data, filters and aligns samples and features, and sources
+#           the model development functions.
+# Author:   B. Rentroia Pacheco, adjusted R.Ruiter
+# Input:    - Imputed D-SQUAME discovery clinical data (results_dir/intermediate/clinical)
+#           - TPM and raw count gene expression matrices (p1_tpms, p2_counts)
+#           - Bad QC sample list (p7_badQC)
+#           - NCC sample weights (p10_weights or p11_weights_unmatched)
+#           - Protein-coding/lncRNA gene list (p12_genes_to_keep)
+#           - DvP signature (p6_bailey) and GTF annotation (p9_gtf)
+#           - WES mutation data, pathways and good QC WES samples
+#             (p13_mutation_data, p14_all_pathways, p15_input138)
+# Output:   Objects created in the calling environment:
+#           - clinical_data:      processed clinical data with weights
+#           - x_data:             filtered, log2(TPM + 1) expression matrix
+#                                 (samples x genes)
+#           - x_data_counts:      filtered raw counts (genes x samples)
+#           - sample_ids_bad_qcs: samples to exclude because of bad QC
+#           - bailey_gene_ids:    DvP signature genes as Ensembl IDs
+#           - mutation_data_amp_del (integration experiments only)
+# Requires: source_type ("early", "late" or "late_wes"), samples_matched
+#           ("matched" or "unmatched"), experiment_setup, strp(),
+#           dir_scripts_functions, results_dir and the config.R paths.
+# Usage:    Sourced by the model scripts in src/sccore_gep/analyses and
+#           src/integration/analyses.
+#===============================================================================
 
-#--------------------------------------------------
+# 1. Libraries
+#-------------------------------------------------------------------------------
 
-#0a. Libraries
-#---------------------------------------------------
 suppressPackageStartupMessages({
 library(tidyverse)
 library(glmnet)
@@ -74,22 +84,28 @@ conflicted::conflict_prefer("rename", "dplyr")
 
 })
 
-#---------------------------------------------------
-
-# 0b. Functions
 #-------------------------------------------------------------------------------
-# save_model_bootstrap: This function save the workflow's results
-# @param b_model: workflow's output
-# @param model_id: lmodel's name
-# @param filedir: directory where to save results
+
+# 2. Functions
+#-------------------------------------------------------------------------------
+#' Save the output of a model development workflow
+#'
+#' @param b_model list. Output of the bootstrap workflow.
+#' @param model_id character. Model name, used as file prefix.
+#' @param filedir character. Directory where the results are saved.
+#'
+#' @return Called for its side effect: writes <model_id>_robj.rds to filedir.
 save_model_bootstrap <- function(b_model, model_id, filedir){
   # Save R object
   saveRDS(b_model, file.path(filedir, paste0(model_id, "_robj.rds")))
 }
 #-------------------------------------------------------------------------------
 
-# 0c. Source functions
+# 3. Source functions
 #-------------------------------------------------------------------------------
+# The bootstrap validation functions depend on the integration strategy:
+# early = DvP / non-DvP / early integration, late = late feature/prediction
+# integration, late_wes = integration of GEP with WES data
 if (source_type == "early"){
   source(file.path(dir_scripts_functions, "auxilliary_modeleval.R"))
 }else if (source_type == "late"){
@@ -102,25 +118,18 @@ source(file.path(dir_scripts_functions, "apply_models.r"))
 
 #-------------------------------------------------------------------------------
 
-# 1. Load the data
+# 4. Load the data
 #-------------------------------------------------------------------------------
-#########################################
-### TO DO CHANGE INPUT DATA LOCATION
-# Gene expression data
+# Gene expression data (TPM)
 gene_exp_data <-  suppressMessages(read.csv(p1_tpms))
 # Gene expression counts data
 x_data_counts <-  suppressMessages(read.csv(p2_counts))
-# Tumor purity data
-#tp_data <- read.csv(p11_tp_data)
-# QCs data
-#qcs_data <- read.csv(p12_qcs_data)
 # Samples with bad QCs
 samples_bad_qcs <-  suppressMessages(read.csv(p7_badQC))
 # Clinical data
 clinical_data <-  suppressMessages(read.csv(file.path(results_dir, "intermediate", "clinical","merged_clinical_data_imputed_d_squame_discovery.csv")))
 clinical_data <- clinical_data[order(clinical_data$SkylineDx.ID),]
-# Weights data
-# Use 195 for unmatched samples and 183 for matched samples
+# Weights data: 195 sets for unmatched samples and 183 sets for matched samples
 if (samples_matched == "unmatched"){
   weights_ncc_fn <- p11_weights_unmatched
 }else{
@@ -142,7 +151,7 @@ input138 <-  suppressMessages(read_csv(p15_input138))
 gtf <- import(p9_gtf)
 #-------------------------------------------------------------------------------
 
-# 1. Preprocess DvP signature
+# 5. Preprocess DvP signature
 #-------------------------------------------------------------------------------
 # Create Ensembl gene ID -> external gene name mapping
 gene_mappings <- as.data.frame(mcols(gtf)) %>%
@@ -180,11 +189,15 @@ bailey_gene_ids <- bailey_diff_prog %>%
   ) %>%
   distinct()
 bailey_gene_ids$ensembl_gene_id <- strp(bailey_gene_ids$ensembl_gene_id )
+# Exclude C1orf112 and FAM102A: these were not in the DvP list used for the
+# published model (renamed in newer Ensembl versions: FIRRM, EEIG1)
+bailey_gene_ids <- bailey_gene_ids %>%
+  dplyr::filter(!ensembl_gene_id %in% c("ENSG00000000460", "ENSG00000167106"))
 #-------------------------------------------------------------------------------
 
-# 2. Preprocess clinical
+# 6. Preprocess clinical
 #-------------------------------------------------------------------------------
-# Preprocess clinical data
+# Add weights, outcome truncated at 5 years, and harmonized/binarized variables
 clinical_data <- clinical_data %>%
   ## Combine tumor purity with clinical data
  # full_join(tp_data %>%
@@ -273,7 +286,7 @@ clinical_data <- clinical_data %>%
          N_very_high_risk_features_bin = ifelse(N_very_high_risk_features == 0, "0", ">=1")) %>%
   dplyr::select(-hr_t_diam, -hr_differentiation, -hr_pni, -hr_t_involvement, -hr_lvi, N_very_high_risk_features)
 
-# Preprocess gene expression data
+# Transpose gene expression data to samples x genes
 feature_names <- gene_exp_data[, 1]
 gene_exp_data <- t(gene_exp_data[, -1])
 colnames(gene_exp_data) <- feature_names
@@ -282,9 +295,9 @@ gene_exp_data <- as.data.frame(gene_exp_data)
 gene_exp_data <- gene_exp_data[as.character(clinical_data$SkylineDx.ID),]
 stopifnot(all(rownames(gene_exp_data) == clinical_data$SkylineDx.ID))
 rownames(clinical_data) <- clinical_data$SkylineDx.ID
-## If remove_badQCsamples == T, identify samples with bad QC and remove them
 
-# Remove whole sets with bad samples if matched or only bad samples if unmatched
+# Identify samples with bad QC: whole case-control sets are removed in the
+# matched design, only the bad samples themselves in the unmatched design
 if (samples_matched == "unmatched"){
   sample_ids_bad_qcs <- clinical_data %>%
     dplyr::filter(SkylineDx.ID %in% samples_bad_qcs$Skyline_ID) %>%
@@ -294,11 +307,15 @@ if (samples_matched == "unmatched"){
     dplyr::filter(Set_id %in% samples_bad_qcs$Set_id) %>%
     pull(SkylineDx.ID)
 }
+
 #-------------------------------------------------------------------------------
 
-# 3. Preprocess gene expression data
+# 7. Preprocess gene expression data
 #-------------------------------------------------------------------------------
-
+# Filters are determined on good QC samples only, then applied to all samples.
+# A gene is removed if it has zero variance, is not protein-coding/lncRNA,
+# has log2(TPM + 1) <= 1 in at least half of the samples, or has a mean
+# log2(TPM + 1) below 2.65.
   gene_exp_data_for_filtering <- gene_exp_data[setdiff(as.character(clinical_data$SkylineDx.ID), sample_ids_bad_qcs),]  
 ## Pre-filtering
 feature_exclusion_df <- data.frame("Gene_name" = colnames(gene_exp_data_for_filtering),
@@ -312,15 +329,15 @@ variance_GEfeats <- apply(gene_exp_data_for_filtering, 2, var)
 feature_exclusion_df$Zero_variance[which(variance_GEfeats == 0)] <- 1
 feature_exclusion_df$Low_variance_0_01[which(variance_GEfeats < 0.01)] <- 1
 
-# Filter genes where average logtpm should be 1 in most of the samples, instead of 0.5 in half of the samples
+## Expression filter: log2(TPM + 1) > 1 in more than half of the samplesin half of the samples
 filter_logtpm <- apply(gene_exp_data_for_filtering, 2, function(x) sum(log2(x + 1) > 1)) > (nrow(gene_exp_data_for_filtering) * 0.5)
 feature_exclusion_df$Filter_logtpm_p1[!filter_logtpm] <- 1
 
-## Mean log TPM filter: if average of gene in samples has log tpm of 2.65, it will be removed
+## Mean expression filter: genes with mean log2(TPM + 1) < 2.65 are removed
 low_mean_logtpm <- apply(gene_exp_data_for_filtering, 2, function(x) mean(log2(x + 1)) < 2.65)
 feature_exclusion_df$Low_mean_logtpm[low_mean_logtpm] <-1
 
-## Identify protein coding genes
+## Identify genes that are not protein-coding or lncRNA
 feature_exclusion_df$Protein_lnc[!gsub("\\..*","",colnames(gene_exp_data_for_filtering)) %in% genes_to_keep$ensembl_gene_id] <- 1
 ## Combine filters
 feature_exclusion_df$filter_logp_and_protein_lnc <- ifelse(
@@ -331,7 +348,7 @@ feature_exclusion_df$filter_logp_and_protein_lnc <- ifelse(
   0
 )
 
-# Filter count data from 390 to 366 genes
+# Counts of the good QC samples only (390 -> 366 samples)
 x_data_countsf <- x_data_counts %>%
   column_to_rownames(var = "ID") %>%
   dplyr::select(all_of(clinical_data$SkylineDx.ID))
@@ -342,8 +359,11 @@ x_data <- data.matrix(gene_exp_data)[, intersect(which(feature_exclusion_df[, "f
 ## log2-transformation
 x_data <- log2(x_data + 1)
 
-
-# Preprocess count data
+## Keep only the samples used for filtering (good QC samples), in the same order
+'x_data <- x_data[rownames(gene_exp_data_for_filtering), , drop = FALSE]
+stopifnot(identical(rownames(x_data), rownames(gene_exp_data_for_filtering)))
+write_rds(x_data, "/home/cscc_project_230717/rruiter/data/logtpm_xdata.rds")'
+# Preprocess count data: keep the genes retained in x_data
 x_data_counts <- x_data_counts %>%
   as.data.frame() %>%
   dplyr::filter(ID %in% colnames(x_data)) %>%
@@ -355,10 +375,12 @@ stopifnot(all(colnames(x_data_counts) == rownames(x_data)))
 
 #-------------------------------------------------------------------------------
 
-# 4. Preprocess mutation data
+# 8. Preprocess mutation data
 #-------------------------------------------------------------------------------
+# Only run for the GEP + WES integration experiments
 if (experiment_setup == "integration"){
-  # Check which pathways can be used
+  # Check which pathways can be used: pathways with more than one gene are
+  # used as pathway-level features, otherwise the single gene is used
   all_pathways2 <- all_pathways %>%
     group_by(Pathway_publication) %>%
     mutate(n_pub = n()) %>%
@@ -373,7 +395,7 @@ if (experiment_setup == "integration"){
   cn_cols <- grep("^chr.*[pq]$", colnames(mutation_data), value = TRUE)
   
   for (col in cn_cols) {
-    # b. Binary for amplifications or deletions only (1 or -1 -> 1)
+    # Binary amplification (1) and deletion (-1) indicators per chromosome arm
     mutation_data[[paste0(col, "_amp_bin")]] <- ifelse(mutation_data[[col]] == 1, 1, 0)
     
     mutation_data[[paste0(col, "_del_bin")]] <- ifelse(mutation_data[[col]] == -1, 1, 0)
@@ -381,7 +403,7 @@ if (experiment_setup == "integration"){
   # Remove bad wes samples
   mutation_data <- mutation_data[mutation_data$Sample %in% input138$...1,]
   
-  # Overlap with GEP samples
+  # Overlap with GEP samples (gene IDs without version suffix)
   rownames(x_data_counts) <- strp(rownames(x_data_counts))
   colnames(x_data) <- strp(colnames(x_data))
   ids <- mutation_data$SkylineDx.ID
@@ -412,4 +434,4 @@ if (experiment_setup == "integration"){
   
 }
 
-
+#-------------------------------------------------------------------------------

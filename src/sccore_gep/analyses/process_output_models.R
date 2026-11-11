@@ -1,16 +1,23 @@
+#===============================================================================
+# Aim:      Extract and standardize the performance metrics and the number of
+#           selected genes of all SCCore-GEP development models (DvP, non-DvP,
+#           early integration, late feature and late prediction integration)
+#           for the figure scripts.
+# Author:   R. Ruiter
+# Input:    - Model .rds files in dir_results_intermediate_sccore_gep/<experiment_sccore_gep>
+# Output:   - cox23_linear_predictors.csv: linear predictor of SCCore-GEP per sample
+#           - perf_OOB_apparent_bootstrap.csv, perf_632plus.csv,
+#             perf_apparent.csv and model_gene_counts.csv, used by
+#             supp_figure_10A_performance_boxplot.R
+#           All written to dir_results_intermediate_sccore_gep.
+# Requires: dir_results_intermediate_sccore_gep, experiment_sccore_gep (main.R)
+# Usage:    Sourced from main.R
+#===============================================================================
 
-#---------------------------------------------------
-# Aim: Prepare model performance data for figure making
-# Author: R.Ruiter
-# Input: Models of DvP, non-DvP, Early integration,
-#        Late feature integration, Late prediction integration
-# Output: Processed performance dataset
-#---------------------------------------------------
+#-------------------------------------------------------------------------------
 
-#---------------------------------------------------
-# Find all RDS model files
-#---------------------------------------------------
-
+# 1. Find all RDS model files
+#-------------------------------------------------------------------------------
 folders <- tibble(
   path = list.files(
     file.path(dir_results_intermediate_sccore_gep, experiment_sccore_gep) ,
@@ -24,10 +31,10 @@ folders <- tibble(
     model = model_file
   )
 
-#---------------------------------------------------
-# Lists for storing results
-#---------------------------------------------------
+#-------------------------------------------------------------------------------
 
+# 2. Lists for storing results
+#-------------------------------------------------------------------------------
 perf_all_list <- list()
 perf_632_list <- list()
 perf_app_list <- list()
@@ -35,10 +42,10 @@ gene_count_list <- list()
 
 n_models <- nrow(folders)
 
-#---------------------------------------------------
-# Read models and extract performance
-#---------------------------------------------------
+#-------------------------------------------------------------------------------
 
+# 3. Read models and extract performance
+#-------------------------------------------------------------------------------
 for(i in seq_len(n_models)){
   
   model <- readRDS(folders$path[i])
@@ -51,10 +58,26 @@ for(i in seq_len(n_models)){
     model_name
   ))
   
-  #-------------------------------------------------
-  # OOB + bootstrap Apparent bootstrap
-  #-------------------------------------------------
-  
+
+  # 3.1 Linear predictor of SCCore-GEP
+  if (grepl("coxnet_Late_feature_integration", model_name)) {
+    fit <- model$Final_model2
+    
+    X    <- fit$x_fitted_model          # 366 x 25
+    beta <- fit$coefficients            # length 25, named
+    
+    # Make sure columns line up by gene ID
+    stopifnot(all(colnames(X) %in% names(beta)))
+    lp <- drop(X[, names(beta)] %*% beta) #sum of each gene log tpm multiplied by the coefficient
+    names(lp) <- rownames(X)
+    lp_df <- data.frame(sample = names(lp), lp = lp)
+    write.csv(lp_df, file.path(
+      dir_results_intermediate_sccore_gep ,
+      "cox23_linear_predictors.csv"
+    ) , row.names = FALSE)
+  }
+
+  # 3.2 OOB + bootstrap Apparent bootstrap
   oob_table_name <- if (!is.null(model$`All out of bag`)) {
     "All out of bag"
   } else {
@@ -81,12 +104,8 @@ for(i in seq_len(n_models)){
       model
     )
   
-  #-------------------------------------------------
-  # 0.632+
-  #-------------------------------------------------
-  
+  # 3.3 0.632+
   if(!is.null(model$`Optimism-Corrected0632plus`)){
-    
     perf_632_list[[i]] <-
       model$`Optimism-Corrected0632plus` %>%
       filter(metric == "wcind_model") %>%
@@ -99,12 +118,8 @@ for(i in seq_len(n_models)){
       mutate(model = model_name)
   }
   
-  #-------------------------------------------------
-  # Apparent performance
-  #-------------------------------------------------
-  
+  # 3.4 Apparent performance
   if(!is.null(model$Apparent_performance)){
-    
     perf_app_list[[i]] <-
       model$Apparent_performance %>%
       filter(metric == "wcind_model") %>%
@@ -117,26 +132,17 @@ for(i in seq_len(n_models)){
       mutate(model = model_name)
   }
   
-  #-------------------------------------------------
-  # Extract final fitted model
-  #-------------------------------------------------
-  
+  # 3.5 Extract final fitted model
   fm <- model$Final_model2
-  
   if(is.null(fm)){
     fm <- model$Model_fit_opt
   }
-  
   if(is.null(fm)){
     fm <- model$Model_fit
   }
   
-  #-------------------------------------------------
-  # Count genes/features
-  #-------------------------------------------------
-  
+  # 3.6 Count genes/features
   gene_count <- length(fm$coefficients)
-  
   gene_count_list[[i]] <- tibble(
     model = model_name,
     gene_count = gene_count
@@ -146,21 +152,20 @@ for(i in seq_len(n_models)){
   gc()
 }
 
-#---------------------------------------------------
-# Combine results
-#---------------------------------------------------
+#-------------------------------------------------------------------------------
+
+# 4. Combine results
+#-------------------------------------------------------------------------------
 
 perf_all_filtered <- bind_rows(perf_all_list)
-
 perf_632plus <- bind_rows(perf_632_list)
-
 perf_apparent <- bind_rows(perf_app_list)
-
 gene_counts <- bind_rows(gene_count_list)
 
-#---------------------------------------------------
-# For Late prediction integration models:
-#---------------------------------------------------
+#-------------------------------------------------------------------------------
+
+# 5. For Late prediction integration models
+#-------------------------------------------------------------------------------
 
 late_prediction_idx <- grepl(
   "Late_prediction_integration",
@@ -191,9 +196,10 @@ if(any(late_prediction_idx)){
     matching_gene_counts
 }
 
-#---------------------------------------------------
-# Output directory
-#---------------------------------------------------
+#-------------------------------------------------------------------------------
+
+# 6. Output directory
+#-------------------------------------------------------------------------------
 # Create output directory if needed
 dir.create(
   dir_results_intermediate_sccore_gep ,
@@ -201,10 +207,10 @@ dir.create(
   showWarnings = FALSE
 )
 
-#---------------------------------------------------
-# Save processed performance datasets
-#---------------------------------------------------
+#-------------------------------------------------------------------------------
 
+# 7. Save processed performance datasets
+#-------------------------------------------------------------------------------
 write_csv(
   perf_all_filtered,
   file.path(
@@ -236,4 +242,5 @@ write_csv(
     "model_gene_counts.csv"
   )
 )
+#-------------------------------------------------------------------------------
 

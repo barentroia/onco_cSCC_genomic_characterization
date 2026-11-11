@@ -1,11 +1,20 @@
-#-------------------------------------------------------------------------------
-# Aim: Plot of SCCore-GEP, BWH, AJCC8 performances in D-SQUAME discovery dataset
-# Author: L.Pozza
-# Input: SCCore-GEP, BWH, AJCC8 performances
-# Output: Supplementary Figure 10B: forest plot of SCCore-GEP, BWH, AJCC8 D-SQUAME discovery dataset performances
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Generate Supplementary Figure 10B: forest plot of the performances
+#           of SCCore-GEP (internal validation), BWH, AJCC8 and the EMC model
+#           in the D-SQUAME discovery dataset, overall and stratified by sample
+#           type, immunosuppression status, BWH and AJCC8 stages.
+# Author:   L. Pozza
+# Input:    - SCCore-GEP .632+ performances with 95% CI
+#             (corr_632plus_CI_final_all_variables.csv)
+#           - BWH, AJCC8, EMC model performances
+#             (BWH_AJCC8_EMCmodel_performances_with_imputation.csv)
+# Output:   - supp_figure_10B_performance_forestplot.pdf and _source_data.csv
+#             in results_dir/publication
+# Requires: code_dir, results_dir (main.R)
+# Usage:    Sourced from main.R
+#===============================================================================
 
-# Load libraries
+# 1. Load libraries
 #-------------------------------------------------------------------------------
 library(conflicted)
 library(tidyverse)
@@ -14,7 +23,7 @@ library(patchwork)
 conflicted::conflicts_prefer(dplyr::filter)
 #-------------------------------------------------------------------------------
 
-# Filenames and settings
+# 2. Filenames and settings
 #-------------------------------------------------------------------------------
 # File with results
 int_res_fn <- file.path(results_dir, "intermediate", "sccore_gep", "corr_632plus_CI_final_all_variables.csv")
@@ -24,18 +33,18 @@ output_dir <- file.path(results_dir, "publication")
 if (!dir.exists(output_dir)){dir.create(output_dir, recursive = T)}
 #-------------------------------------------------------------------------------
 
-# Source functions
+# 3. Source functions
 #-------------------------------------------------------------------------------
 source(file.path(code_dir, "functions", "colors.R"))
 #-------------------------------------------------------------------------------
 
-# Read data
+# 4. Read data
 #-------------------------------------------------------------------------------
 int_res <- read.csv(int_res_fn)
 res <- read.csv(res_fn)
 #-------------------------------------------------------------------------------
 
-# Prepare data for forest plot
+# 5. Prepare data for forest plot
 #-------------------------------------------------------------------------------
 df <- int_res  %>%
     rename(wcindex_pe = final_value,
@@ -138,7 +147,7 @@ fp_df1 <- fp_df %>% filter(grepl("Entire cohort|Sample type|Immunosuppression st
 fp_df2 <- fp_df %>% filter(!grepl("Entire cohort|Sample type|Immunosuppression status", unique_label))
 #-------------------------------------------------------------------------------
 
-# Forest plot #1
+# 6. Forest plot #1
 #-------------------------------------------------------------------------------
 # Identify header rows for separator lines
 header_positions1 <- which(unique(fp_df1$unique_label) %in% fp_df1$unique_label[fp_df1$category %in% c("header")])
@@ -173,7 +182,7 @@ p_forest1 <- ggplot(fp_df1, aes(y = unique_label)) +
   )
 #-------------------------------------------------------------------------------
 
-# Forest plot #2
+# 7. Forest plot #2
 #-------------------------------------------------------------------------------
 # Identify header rows for separator lines
 header_positions2 <- which(unique(fp_df2$unique_label) %in% fp_df2$unique_label[fp_df2$category %in% c("header")])
@@ -211,7 +220,7 @@ fp <- p_table1 + p_forest1 + p_table2 + p_forest2 +
   plot_layout(widths = c(2, 2.5, 2, 2.5))
 #-------------------------------------------------------------------------------
 
-# Source data that needs to be saved
+# 8. Source data that needs to be saved
 #-------------------------------------------------------------------------------
 source_data_df <- df %>%
   select(variable, group, model, est, lower, upper) %>%
@@ -227,10 +236,10 @@ source_data_df <- df %>%
   arrange(`Stratification variable`, Group, Model)
 #-------------------------------------------------------------------------------
 
-# Save results
+# 9. Save results
 #-------------------------------------------------------------------------------
-write.csv(source_data_df, file.path(output_dir, "supp_figure_10b_performance_forestplot_source_data.csv"), row.names = F)
-pdf(file.path(output_dir, "supp_figure_10b_performance_forestplot.pdf"), width = 18.5, height = 7.5)
+write.csv(source_data_df, file.path(output_dir, "supp_figure_10B_performance_forestplot_source_data.csv"), row.names = F)
+pdf(file.path(output_dir, "supp_figure_10B_performance_forestplot.pdf"), width = 18.5, height = 7.5)
 print(fp)
 dev.off()
 #-------------------------------------------------------------------------------

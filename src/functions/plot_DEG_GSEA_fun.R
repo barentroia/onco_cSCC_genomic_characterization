@@ -1,20 +1,33 @@
+#===============================================================================
+# Aim:      Plot differentially expressed genes (volcano plots) and run/plot
+#           gene set enrichment analysis (GSEA).
+# Contents: - plotsSignatures(): volcano plot, optionally with signature genes
+#           - runGSEA(): fgsea on DESeq2 statistics + bar plot of top pathways
+# Requires: output_dir (and color_fig when a signature is plotted) in the
+#           calling environment
+# Usage:    Sourced by the DEG and GSEA figure scripts in src/rna_seq/figures
+#===============================================================================
 
+#' Volcano plot of DEGs, optionally highlighting signature genes
+#'
+#' Without a signature, significant genes are labelled; with a signature,
+#' signature genes are coloured using color_fig (global object).
+#'
+#' @param dgea_df data.frame. DGEA results from dgea_deseq2() (padj,
+#'   log2FoldChange, padj_string, gene_name and, if used, signature).
+#' @param design character. Design/contrast label used in title and file names.
+#' @param signature character vector or NA. Signature gene names; NA = none.
+#' @param n_samples numeric. Number of samples in the DGEA (for the title).
+#' @param figure_name character. Prefix of the output file names.
+#'
+#' @return Called for its side effects: saves the volcano plot (pdf) and the
+#'   plotted data (csv) in output_dir (global object).
 plotsSignatures <- function(dgea_df,
                             design,
                             signature=NA,
                             n_samples=378,
                             figure_name){
-  
-  #' Plot volcano plots with DEGs + signature genes
-  #' 
-  #' @param dgea_df data frame. Data frame with the DEG output from DESeq2
-  #' @param design character. String with information on the design
-  #' @param signature list. List of signatures (gene names)
-  #' @param n_samples numeric. Number of samples used in DGEA (default is 378)
-  #' @param figure_name character. Name of the figure
-  #' 
-  #' @return Volcano plots
-  #'  
+
   
   if (any(is.na(signature))){
     dgea_df <- dgea_df[order(dgea_df$padj,decreasing = F),]
@@ -82,23 +95,26 @@ plotsSignatures <- function(dgea_df,
   
 }
 
-
+#' Run gene set enrichment analysis (fgsea) and plot the top pathways
+#'
+#' Genes are ranked by the DESeq2 Wald statistic. The n_top pathways with the
+#' lowest and the highest normalized enrichment score (NES) are plotted.
+#'
+#' @param dgea_df data.frame. DGEA results from dgea_deseq2() (ensg_id, stat).
+#' @param pathways_to_test list. Gene sets (Ensembl gene IDs) to test.
+#' @param design character. Design/contrast label used in title and file names.
+#' @param type_set character. Gene set collection label (e.g. "H" = Hallmarks).
+#' @param n_top integer. Number of top pathways per direction to plot.
+#' @param figure_name character. Prefix of the output file names.
+#'
+#' @return Called for its side effects: saves the GSEA bar plot (pdf) and all
+#'   fgsea results (csv) in output_dir (global object).
 runGSEA <- function(dgea_df,
                     pathways_to_test,
                     design,
                     type_set="H",
                     n_top=15,
                     figure_name){
-  
-  #' Run and plot GSEA using fgsea
-  #' 
-  #' @param dgea_df data frame. Data frame with the DEG output from DESeq2
-  #' @param pathways_to_test list. List(s) of pathways to test
-  #' @param design character. Design model DGEA
-  #' @param type_set character. Type of pathways
-  #' 
-  #' @return GSEA plot
-  #'  
   
   set.seed(123)
   

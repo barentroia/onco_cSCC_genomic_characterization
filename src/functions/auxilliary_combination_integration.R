@@ -1,21 +1,63 @@
-# Auxilliary functions for model evaluation:
-# ------------------------------------------------------------------------------
-# Bootstrap_validation_inner function: This function performs bootstrap validation of a model fitted on data ds_x. Only inner loop, no confidence intervals are provided.
-# @param model_method: character indicating which type of model should be applied to the data
-# @param ds_x: dataset with all of the features, columns should be features with colnames identifying the features
-# @param ds_additional: dataset with outcomes of interest and matching informations
-# @param ds_x_counts: counts dataset with all of the features, columns should be features with colnames identifying the features
-# @param outcome_name: character vector corresponding to the column name of the outcome of interest in the ds_additional dataframe
-# @param fup_name: character vector corresponding to the column name of the follow-up time of the outcome of interest in the ds_additional dataframe
-# @param weights_name: character vector corresponding to the column name of the weights in the ds_additional dataframe
-# @param tp: number indicating the timepoint of interest
-# @param B: number of bootstrap validations
-# @param seed: number indicating starting seed
-# @param verbose: logical indicating if current bootstrap run should be indicated
-# @param model_params: vector of model parameters
-# @param bad_samples: logical indicating if bootstrap cross-validation is performed
-# @param remove_bad_samples: logical indicating if samples with bad QCs should be
-# removed during the training, if TRUE, separate performances will be computed for these samples
+#===============================================================================
+# Aim:      Bootstrap internal validation of the integration models combining
+#           gene expression (DvP and non-DvP genes) with WES mutation and copy
+#           number features (unmatched design).
+# Contents: - bootstrap_validation(): wrapper; also runs the outer bootstrap
+#             loop for confidence intervals
+#           - bootstrap_validation_inner(): bootstrap model development and
+#             optimism correction
+#           - input_arg_check(): check alignment of the input data
+#           - get_performance_measures(): (weighted) AUC and C-index
+# Requires: build_model() (build_models.r) and apply_model() (apply_models.r)
+# Usage:    Sourced by Model_input_processing.R when source_type == "late_wes"
+#===============================================================================
+
+#' Bootstrap internal validation of a late integration model (inner loop only)
+#'
+#' GEP models are first developed separately on the DvP and non-DvP gene
+#' sets; their selected genes (combi_type "stackedGEP") or their predictions
+#' (combi_type "Stacked") are then combined with the WES features in
+#' ds_mutation into a final model. Bootstrap samples are drawn at sample
+#' level (unmatched design). Performance is optimism-corrected with the
+#' Harrell, .632 and .632+ methods.
+#'
+#' @param feat_sel_method character. Feature selection method per gene set
+#'   ("deseq2" or "none").
+#' @param topfeats integer. Number of top features to select per gene set.
+#' @param model_method character. Model type of the per-gene-set models
+#'   (e.g. "coxnet", "RSF"); the final model type is model.params$model_final.
+#' @param ds_x_list list of data.frames. Log2 expression data (samples x
+#'   genes), one element per gene set (DvP, non-DvP).
+#' @param ds_additional data.frame. Clinical data (outcome, follow-up,
+#'   weights, Set_id and stratification variables).
+#' @param ds_x_counts_list list of data.frames. Raw counts (genes x samples),
+#'   one element per gene set, used for DESeq2 feature selection.
+#' @param ds_mutation data.frame. WES mutation and copy number features
+#'   (samples x features), rows aligned with ds_additional.
+#' @param outcome_name character. Column in ds_additional with the event
+#'   indicator (0/1).
+#' @param fup_name character. Column in ds_additional with the follow-up time.
+#' @param weights_name character. Column in ds_additional with the NCC
+#'   sampling weights.
+#' @param tp numeric. Time point (years) at which predictions are evaluated.
+#' @param B integer. Number of bootstrap repetitions.
+#' @param seed integer. Seed for reproducibility.
+#' @param verbose logical. Print the current bootstrap repetition.
+#' @param model.params list. Model parameters, including combi_type
+#'   ("Stacked" or "stackedGEP") and model_final.
+#' @param bad_samples character vector. IDs of samples with bad QC, excluded
+#'   from training.
+#' @param remove_bad_samples logical. Kept for compatibility; bad QC samples
+#'   are always removed when listed in bad_samples.
+#' @param genes_oi character vector or NULL. Genes always kept in feature selection.
+#'
+#' @return Named list with the apparent performance, "Optimism-Corrected",
+#'   "Optimism-Corrected0632", "Optimism-Corrected0632plus", the per-bootstrap
+#'   optimism/apparent/OOB results, "Model_fit" (final model on the full
+#'   dataset), "Model_fit_pre" (per-gene-set models), "OOB_predicted_probs",
+#'   "Bootstrap_coefficients", "stacked_bootstrap_models"
+#'   "selected_feats_mutations", "selected_feats_stackedGEP", the final
+#'   refitted models and, when bad QC samples are given, their performances.
 bootstrap_validation_inner <- function(feat_sel_method,topfeats,model_method,ds_x_list, ds_additional, ds_x_counts_list,ds_mutation,outcome_name,fup_name,weights_name,tp,B,seed,verbose=TRUE,model.params=NULL,bad_samples=NA,remove_bad_samples=F,genes_oi=NULL){
   
   # Set seed to ensure reproducibility
@@ -339,7 +381,7 @@ bootstrap_validation_inner <- function(feat_sel_method,topfeats,model_method,ds_
     set.seed(brep)
     # Bootstrap results
     bootstrap_coeffs[[brep]][[names(ds_x_list)[k]]] <- fit_bootstrap_list[[k]][["coefficients"]]
-    # 3. Apply model in the bootstrap sample and estimate performance:
+    # Apply model in the bootstrap sample and estimate performance:
     predictions_model <- fit_bootstrap_list[[k]]$predictions
     #-------------------------------------------------------------------------------
     # 7.2 Save lambda and alpha  
@@ -356,7 +398,7 @@ bootstrap_validation_inner <- function(feat_sel_method,topfeats,model_method,ds_
     #-----------------------------------------------------------------------------
     meta_input_bootstrap <- as.data.frame(meta_input_bootstrap)
     combined_selected_genes_bs <- unique(unlist(meta_input_bootstrap_GEP))
-    # 4. Prepare the bootstrap x to only have combined selected genes
+    # 8.1 Prepare the bootstrap x to only have combined selected genes
     # For each dataset, keep only genes that exist and are in combined_selected_genes_bs
     ds_x_boot_list_filtered <- lapply(ds_x_train_bootstrap_list, function(ds) {
       genes_to_keep <- intersect(colnames(ds), combined_selected_genes_bs)
@@ -390,7 +432,7 @@ bootstrap_validation_inner <- function(feat_sel_method,topfeats,model_method,ds_
     rownames(ds_m_bootstrap) <- boot_ids
     # Final check
     stopifnot(identical(rownames(ds_m_bootstrap), rownames(ds_y_train_bootstrap)))
-    ### RUn for mutations
+    ### Run for mutations
     model.params_mut <- model.params
     model.params_mut$mut_alphas <- mut_digits
     
@@ -477,10 +519,10 @@ bootstrap_validation_inner <- function(feat_sel_method,topfeats,model_method,ds_
     #-------------------------------------------------------------------------------
     # 11.2 Apply bootstrap model in the entire, OOB datasets, and estimate performances:
  if(model.params$combi_type == "stackedGEP"){
-      #-------------------------------------------------------------------------------
-      # 12. For GEP+WES features or scores model, compure performance
-      #-------------------------------------------------------------------------------
-      # 12.1 only keep genes rows from combined genes for OOB and apparent data
+   #-------------------------------------------------------------------------
+   # 11.3 For GEP+WES features or scores model, compute performance
+   #-------------------------------------------------------------------------
+   # 11.3.1 Only keep genes rows from combined genes for OOB and apparent data
       ds_x_oob_list_filtered <- lapply(ds_x_train_oob_list, function(ds) {
         genes_to_keep <- intersect(colnames(ds), combined_selected_genes_bs)
         ds[, genes_to_keep, drop = FALSE]
@@ -494,19 +536,19 @@ bootstrap_validation_inner <- function(feat_sel_method,topfeats,model_method,ds_
       # Combine them by columns (genes)
       ds_x_orig_combined <- do.call(cbind, ds_x_orig_list_filtered)
       
-      #-------------------------------------------------------------------------------
-      # 12.2 Make mutation data x OOB or apparent samples
+      #-------------------------------------------------------------------------
+      # 11.3.2 Make mutation data x OOB or apparent samples
       all(rownames(ds_x_oob_combined) %in% rownames(ds_m))
       ds_m_aligned_OOB <- ds_m[rownames(ds_x_oob_combined), , drop = FALSE]
       all(rownames(ds_x_orig_combined) %in% rownames(ds_m))
       ds_m_aligned_APP <- ds_m[rownames(ds_x_orig_combined), , drop = FALSE]
       
-      #-------------------------------------------------------------------------------
-      # 13. If mutations and gep features are combined
+      #-------------------------------------------------------------------------
+      # 11.4 If mutation and GEP features are combined
       if (model.params$combi_mut_type == "late_feature_mut"){
 
-        #-------------------------------------------------------------------------------
-        # 13.1 Align mutation data to OOB samples and get predictions
+        #-----------------------------------------------------------------------
+        # 11.4.1 Align mutation data to OOB samples and get predictions
     ds_m_filtered_OOB <- ds_m_aligned_OOB[, intersect(colnames(ds_m_aligned_OOB), mut_feats_bs), drop = FALSE]
     ds_x_m_OOB <- cbind(
       ds_x_oob_combined,
@@ -532,8 +574,8 @@ bootstrap_validation_inner <- function(feat_sel_method,topfeats,model_method,ds_
       outcome_name, fup_name, weights_name, tp,
       fit_stacked_boot$recalibration_cox_lp
     )
-    #-------------------------------------------------------------------------------
-    # 13.2 Align mutation data to App samples and get predictions
+    #---------------------------------------------------------------------------
+    # 11.4.2 Align mutation data to App samples and get predictions
     ds_m_filtered_APP <- ds_m_aligned_APP[, intersect(colnames(ds_m_aligned_APP), mut_feats_bs), drop = FALSE]
     ds_x_m_APP <- cbind(
       ds_x_orig_combined,
@@ -662,7 +704,8 @@ int_val_estimates0632plus <- oob_estimates %>%
 
 
 #-------------------------------------------------------------------------------
-# 13. Make final model with optimal lambda and alpha the same way as training model
+
+# 14. Make final model with optimal lambda and alpha the same way as training model
 #-------------------------------------------------------------------------------
 fit_final_list <- list()
 predictions_list_final <- list()
@@ -675,7 +718,7 @@ if (grepl("coxnet|glmnet|lasso|ridge", base_model_method)) {
     vals_alpha <- sapply(alpha_list, function(b) b[[k]])
     model.params$avg_alpha <- mean(unlist(vals_alpha), na.rm = TRUE)
     
-    # 1. Build a model in the entire dataset for Bailey and Remaining with optimal lambda and alpha
+    # 14.1 Build a model in the entire dataset for Bailey and Remaining with optimal lambda and alpha
     set.seed(seed)
     fit_final_list[[k]]  <- build_model(feat_selection_method = feat_sel_method,
                                         topfeats = topfeats,
@@ -703,7 +746,7 @@ if (grepl("coxnet|glmnet|lasso|ridge", base_model_method)) {
       datadriven = predictions_list_final[[2]]
     )
 
-    # 1.1 Combine the selected genes from final model and subset x
+    # 14.2 Combine the selected genes from final model and subset x
     meta_input_features_comb_final <- unique(c(names(fit_final_list[[1]]$coefficients),names(fit_final_list[[2]]$coefficients)))
     samps_to_keep <- rownames(ds_x_train)
     meta_input_features_comb_final <- meta_input_features_comb_final[meta_input_features_comb_final != "(Intercept)"]
@@ -759,12 +802,12 @@ if (grepl("coxnet|glmnet|lasso|ridge", base_model_method)) {
       stopifnot(nrow(ds_x_final_opt) == nrow(ds_x_train_stackedGEP_final))
       head(ds_x_final_opt)
     }
-    # 1.2 Run final coxnet model on combined selected genes
+    # 14.3 Run final coxnet model on combined selected genes
     if ( model.params$model_final == "model2" |  model.params$model_final == "model3"){
       model.params$avg_lambda1se2 <- mean(unlist(lambda1se_list2), na.rm = TRUE)
       model.params$avg_alpha2     <- mean(unlist(alpha_list2), na.rm = TRUE)
     }
-    #2 Run the second coxnet model
+    # 14.4  Run the second coxnet model
     if (model.params$combi_type  == "stackedGEP"){
       combined <- meta_input_features_final
     fit_final2 <- build_model(
@@ -781,12 +824,12 @@ if (grepl("coxnet|glmnet|lasso|ridge", base_model_method)) {
       seed = seed)
     }
     
-    # 2. Get model predictions and performance in the training cohort
+    # 14.4 Get model predictions and performance in the training cohort
     predictions_model_orig_opt <- fit_final2$predictions
     
     }
 
-# 10. Results
+# 15. Results
 res <- list("fit_bootstrap_all" = fit_bootstrap_all,
             "Apparent_performance"= perf_orig_on_orig,
             
@@ -832,24 +875,44 @@ if (grepl("coxnet|glmnet|lasso|ridge", base_model_method)) {
 }
 
 
-# Bootstrap_validation function: This function performs bootstrap validation of a model fitted on data ds_x. It can produce confidence intervals for optimism-corrected estimates, if cis = TRUE and the number of outer loops are provided.
-# @param model_method: character indicating which type of model should be applied to the data
-# @param ds_x: dataset with all of the features, columns should be features with colnames identifying the features
-# @param ds_additional: dataset with outcomes of interest and matching informations
-# @param ds_x_counts: counts dataset with all of the features, columns should be features with colnames identifying the features
-# @param outcome_name: character vector corresponding to the column name of the outcome of interest in the ds_additional dataframe
-# @param fup_name: character vector corresponding to the column name of the follow-up time of the outcome of interest in the ds_additional dataframe
-# @param weights_name: character vector corresponding to the column name of the weights in the ds_additional dataframe
-# @param tp: number indicating the timepoint of interest
-# @param B_inner: number of bootstrap repetitions in the inner loop
-# @param seed: number indicating starting seed
-# @param cis: logical indicating whether confidence intervals should be computed (TRUE) or not (FALSE)
-# @param B_outer: number of bootstrap repetitions in the outer loop, for computation of confidence intervals
-# @param model_params: vector of model parameters
-# @param bad_samples: logical indicating if bootstrap cross-validation is performed
-# @param remove_bad_samples: logical indicating if samples with bad QCs should be removed during the training,
-# if TRUE, separate performances will be computed for these samples
-# @param genes_oi: list of genes of interest
+#' Bootstrap validation wrapper, optionally with outer bootstrap for CIs
+#'
+#' Without CIs (cis = FALSE) this checks the input and runs
+#' bootstrap_validation_inner() once. With cis = TRUE and B_outer given, it
+#' runs a batch of 10 outer bootstrap repetitions (B_outer - 9 to B_outer):
+#' in each, the dataset is resampled and the full inner bootstrap procedure
+#' is repeated, and the .632+ estimates are collected to compute 95%
+#' percentile confidence intervals. Batches are combined afterwards by
+#' process_CI_sccore_gep.R.
+#'
+#' @param feat_sel_method character. Feature selection method ("deseq2" or "none").
+#' @param topfeats integer. Number of top features to select per gene set.
+#' @param model_method character. Model type of the per-gene-set models.
+#' @param ds_x_list list of data.frames. Log2 expression data per gene set.
+#' @param ds_additional data.frame. Clinical data.
+#' @param ds_x_counts_list list of data.frames. Raw counts per gene set.
+#' @param ds_mutation data.frame. WES mutation and copy number features
+#'   (samples x features), rows aligned with ds_additional.
+#' @param outcome_name character. Column in ds_additional with the event
+#'   indicator (0/1).
+#' @param fup_name character. Column in ds_additional with the follow-up time.
+#' @param weights_name character. Column in ds_additional with the NCC
+#'   sampling weights.
+#' @param tp numeric. Time point (years) at which predictions are evaluated.
+#' @param B_inner integer. Number of inner bootstrap repetitions.
+#' @param seed integer. Seed for reproducibility.
+#' @param cis logical. Compute outer bootstrap confidence intervals.
+#' @param B_outer integer or NULL. Last outer repetition of this batch.
+#' @param model.params list. Model parameters (see bootstrap_validation_inner()).
+#' @param bad_samples character vector. IDs of samples with bad QC.
+#' @param remove_bad_samples logical. See bootstrap_validation_inner().
+#' @param genes_oi character vector or NULL. Genes always kept in feature selection.
+#' @param dir_results character or NULL. Results directory (currently unused).
+#'
+#' @return Without CIs: output of bootstrap_validation_inner(). With CIs: list
+#'   with "CIs Optimism-Corrected0632plus" (mean and 2.5/97.5% quantiles) and
+#'   "Estimates Optimism-Corrected0632plus" (all outer estimates). Both also
+#'   contain "Bootstrap_parameters" (the input arguments).
 bootstrap_validation <- function(feat_sel_method,topfeats,model_method,ds_x_list, ds_additional, ds_x_counts_list,ds_mutation,outcome_name,fup_name,weights_name,tp,B_inner,seed,cis=FALSE,B_outer=NULL,model.params=NULL,bad_samples=NA,remove_bad_samples=F,genes_oi=NULL,dir_results = NULL){
   argg <- as.list(environment())
   argg <- argg[setdiff(names(argg),c("ds_x_list", "ds_additional", "ds_x_counts_list"))]  # Set seed to ensure reproducibility
@@ -879,19 +942,26 @@ bootstrap_validation <- function(feat_sel_method,topfeats,model_method,ds_x_list
 }
 
 
-# input_arg_check function: This function checks the input argument of the user
-# @param ds_x_list: list of bailey and remaining datasets with all of the features, columns should be features with colnames identifying the features
-# @param ds_additional: dataset with outcomes of interest and matching informations
-# @param ds_x_counts_list: list of bailey and remaining counts datasets with all of the features, columns should be features with colnames identifying the features
-# @param outcome_name: character vector corresponding to the column name of the outcome of interest in the ds_additional dataframe
-# @param fup_name: character vector corresponding to the column name of the follow-up time of the outcome of interest in the ds_additional dataframe
-# @param weights_name: column name of the weights in ds_y
+#' Check the input of bootstrap_validation()
+#'
+#' Stops with an informative error if the outcome, follow-up or weight
+#' columns are missing, or if samples/features are not aligned between the
+#' expression, count and clinical datasets of each gene set.
+#'
+#' @param ds_x_list list of data.frames. Log2 expression data per gene set.
+#' @param ds_y data.frame. Clinical data.
+#' @param ds_x_counts_list list of data.frames. Raw counts per gene set.
+#' @param outcome_name character. Outcome column in ds_y.
+#' @param fup_name character. Follow-up time column in ds_y.
+#' @param weights_name character. Weights column in ds_y.
+#'
+#' @return Called for its side effects (error or confirmation message).
 input_arg_check <- function(ds_x_list, ds_y, ds_x_counts_list,
                             outcome_name, fup_name, weights_name) {
   
-  # ─────────────────────────────────────────────
-  # 1️⃣ Clinical / outcome data checks
-  # ─────────────────────────────────────────────
+  #-------------------------------------------------------------------------------
+  # 1. Clinical / outcome data checks
+  #-------------------------------------------------------------------------------
   if (!(outcome_name %in% colnames(ds_y))) {
     stop(paste0("Outcome_name: ", outcome_name, " not found in clinical data (ds_y)."))
   }
@@ -902,16 +972,16 @@ input_arg_check <- function(ds_x_list, ds_y, ds_x_counts_list,
     stop(paste0("Weights_name: ", weights_name, " not found in clinical data (ds_y)."))
   }
   
-  # ─────────────────────────────────────────────
-  # 2️⃣ Check that lists are consistent
-  # ─────────────────────────────────────────────
+  #-------------------------------------------------------------------------------
+  # 2. Check that lists are consistent
+  #-------------------------------------------------------------------------------
   if (length(ds_x_list) != length(ds_x_counts_list)) {
     stop("ds_x_list and ds_x_counts_list must have the same number of elements.")
   }
   
-  # ─────────────────────────────────────────────
-  # 3️⃣ Iterate over each dataset pair
-  # ─────────────────────────────────────────────
+  #-------------------------------------------------------------------------------
+  # 3. Iterate over each dataset pair
+  #-------------------------------------------------------------------------------
   for (i in seq_along(ds_x_list)) {
     message(paste0("Checking dataset ", i, " of ", length(ds_x_list), "..."))
     ds_x <- ds_x_list[[i]]
@@ -936,14 +1006,23 @@ input_arg_check <- function(ds_x_list, ds_y, ds_x_counts_list,
   message("All datasets passed input checks.")
 }
 
-# get_performance_measures function: This function computes performance metrics for predictions given in model_predictions
-# @param model_predictions: numeric vector with risk predictions from the model (higher prediction = higher risk)
-# @param ds_additional: dataset with outcomes of interest and matching informations
-# @param outcome: character vector corresponding to the column name of the outcome of interest in the ds dataframe
-# @param outcome_FU: character vector corresponding to the column name of the follow-up time of the outcome of interest in the ds dataframe
-# @param weights_name: character vector corresponding to the column name of the weights in the ds dataframe
-# @param tp: number indicating the timepoint of interest
-# @param lps: numeric vector with linear predictors from the model
+#' Compute discrimination performance of model predictions
+#'
+#' Computes (weighted) AUC, (weighted) C-index and, where applicable, the
+#' median case-control difference in predictions per set, for the whole
+#' dataset ("All") and for each available stratification variable.
+#'
+#' @param model_predictions numeric vector. Predicted risks (higher = higher
+#'   risk), in the same order as the rows of ds.
+#' @param ds data.frame. Clinical data with outcome, follow-up, weights and
+#'   stratification variables.
+#' @param outcome character. Outcome column in ds.
+#' @param outcome_FU character. Follow-up time column in ds.
+#' @param weights_name character. Weights column in ds.
+#' @param tp numeric. Time point of interest (not used in the computation).
+#' @param lps numeric vector or NULL. Linear predictors of the model.
+#'
+#' @return data.frame in long format with columns variable, group, metric and value.
 get_performance_measures <- function(model_predictions,
                                      ds,
                                      outcome,
@@ -993,7 +1072,6 @@ get_performance_measures <- function(model_predictions,
   
   # Stratification (UNCHANGED logic)
   if (any(strat_vars %in% colnames(ds))) {
-    
     strat_vars <- intersect(strat_vars, colnames(ds))
     
     pred_ds <- pred_ds %>%
@@ -1005,20 +1083,16 @@ get_performance_measures <- function(model_predictions,
         pred_ds %>%
           dplyr::mutate(variable = "All", group = "All")
       )
-    
     strat_vars_levels <- c("All", strat_vars)
     
   } else {
-    
     pred_ds <- pred_ds %>%
       dplyr::mutate(variable = "All", group = "All")
     
     strat_vars_levels <- c("All")
   }
-  
   # Paired metric removed (Set_id removed)
   median_dif_ds <- NA
-  
   # Metrics
   perf_ds <- pred_ds %>%
     dplyr::group_by(variable, group) %>%
@@ -1030,14 +1104,10 @@ get_performance_measures <- function(model_predictions,
                                      quiet = TRUE,
                                      direction = "<")
                          ))),
-      
       # FIXED: safe weights inside group (NO tryCatch, NO silent masking)
-      
       wauc_model = {
-        
         w <- weight
         valid <- !is.na(w) & w > 0
-        
         if (length(unique(outcome)) == 1 || sum(valid) < 2 || length(unique(outcome[valid])) < 2) {
           NA
         } else {
@@ -1050,19 +1120,16 @@ get_performance_measures <- function(model_predictions,
           )
         }
       },
-      
       cind_model = ifelse(length(unique(outcome)) == 1,
                           NA,
                           1 - rcorr.cens(pred_score,
                                          survival::Surv(outcome_FU, outcome))[1]),
-      
       wcind_model = ifelse(length(unique(outcome)) == 1 | all(is.na(weight)),
                            NA,
                            intsurv::cIndex(outcome_FU,
                                            event = outcome,
                                            pred_score,
                                            weight = weight)[[1]]),
-      
       .groups = "keep"
     ) %>%
     dplyr::ungroup()
@@ -1074,3 +1141,4 @@ get_performance_measures <- function(model_predictions,
   
   perf_ds
 }
+#-------------------------------------------------------------------------------

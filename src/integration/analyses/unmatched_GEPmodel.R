@@ -1,19 +1,18 @@
-#---------------------------------------------------
-# Aim: Prepare RNAseq model development pipeline unmatched with 126 samples
-# Author: R.Ruiter
-# Input: Clinical dataset
-#        TPM gene expression matrix
-#        Raw count gene expression matrix
-#        Bailey DvP gene list
-#        QC exclusion list
-#        samples that overlap between WES and GEP data
-# Output: RNAseq model on 126 samples
+#===============================================================================
+# Aim:      Develop and bootstrap-validate the GEP-only model on the 126
+#           unmatched samples that also have WES data: DvP and non-DvP genes
+#           are selected with DESeq2 and combined in a Coxnet model (late
+#           feature integration), as for SCCore-GEP.
+# Author:   R. Ruiter
+# Input:    - Clinical and RNA-seq data, loaded via Model_input_processing.R
+#           - DvP (Bailey) gene list and bad QC sample list
+# Output:   - GEP_model_robj.rds in dir_results_intermediate_integration
+# Requires: dir_scripts_functions, dir_results_intermediate_integration,
+#           experiment_setup = "integration" (main.R) and config.R paths
+# Usage:    Sourced from main.R
+#===============================================================================
 
-
-
-#-------------------------------------------------------------------------------
-
-# 0. Load R library
+# 1. Settings
 #-------------------------------------------------------------------------------
 conflicted::conflict_prefer("select", "dplyr")
 conflicted::conflict_prefer("filter", "dplyr")
@@ -22,10 +21,22 @@ conflicted::conflict_prefer("intersect", "base")
 
 #-------------------------------------------------------------------------------
 
-# 1. Input parameters and global functions
+# 2. Helper functions
 #-------------------------------------------------------------------------------
+#' Strip the version suffix from Ensembl gene IDs (keep first 15 characters)
+#'
+#' @param x character vector. Ensembl gene IDs, e.g. "ENSG00000141510.18".
+#'
+#' @return character vector of unversioned IDs.
 strp <- function(x) substr(x, 1, 15)
-# Helper function to subset gene expression matrix for a given signature
+
+
+#' Subset an expression matrix to the genes of a signature
+#'
+#' @param signature_gene_ids character vector. Gene IDs of the signature.
+#' @param expression_matrix matrix/data.frame. Expression data (samples x genes).
+#'
+#' @return The expression matrix restricted to the signature genes present.
 subset_expression_matrix <- function(signature_gene_ids, expression_matrix) {
   genes_in_matrix <- intersect(signature_gene_ids, colnames(expression_matrix))
   return(expression_matrix[, genes_in_matrix, drop = FALSE])
@@ -36,7 +47,7 @@ if (!dir.exists(dir_results_intermediate_integration)){dir.create(dir_results_in
 
 #-------------------------------------------------------------------------------
 
-# 1. Input parameters
+# 3. Input parameters
 #-------------------------------------------------------------------------------
 # Workflow settings
 ## Remove samples with bad QCs
@@ -97,22 +108,23 @@ models_params_list <-list(
 
 #-------------------------------------------------------------------------------
 
-# 2. Source file with experiment set-up
+# 4. Source file with experiment set-up
 #-------------------------------------------------------------------------------
 source(file.path(dir_scripts_functions, "Model_input_processing.R"))
 
 #-------------------------------------------------------------------------------
 
-# 3. Subset TPM and counts data to only have relevant genes
+# 5. Subset TPM and counts data to only have relevant genes
 #-------------------------------------------------------------------------------
 # Create expression matrices for all the required signatures
 colnames(x_data) <- strp(colnames(x_data))
 rownames(x_data_counts) <- strp(rownames(x_data_counts))
-
-# 4. Get DvP and non-DvP
 #-------------------------------------------------------------------------------
 
-# Align datasets
+# 6. Get DvP and non-DvP
+#-------------------------------------------------------------------------------
+# Split the expression and count data into DvP (Bailey) genes and all other
+# genes, and check that all datasets are aligned
 x_data_bailey <- subset_expression_matrix(bailey_gene_ids$ensembl_gene_id, x_data)
 x_data_counts_bailey <- as.data.frame(t(subset_expression_matrix(bailey_gene_ids$ensembl_gene_id, t(x_data_counts))))
 
@@ -128,10 +140,9 @@ print(paste0("Bailey gene matrix: ", nrow(x_data_bailey), " samples x ", ncol(x_
 print(paste0("Non-Bailey gene matrix: ", nrow(x_data_other), " samples x ", ncol(x_data_other), " features."))
 gene_base <- gsub("\\..*", "", colnames(x_data))
 
-
 #-------------------------------------------------------------------------------
 
-# 5. Run workflow and save results
+# 7. Run workflow and save results
 #-------------------------------------------------------------------------------
 max_features <- ncol(x_data_bailey)
 # Run workflow in for-loop and save results

@@ -1,21 +1,35 @@
-#---------------------------------------------------
-# Aim: Prepare confidence interval SCCore-GEP performance
-# Author: R.Ruiter
-# Input: all batches of confidence performance of SCCore-GEP
-# Output: One performance file for confidence performance of SCCore-GEP
-#---------------------------------------------------
+#===============================================================================
+# Aim:      Combine the outer bootstrap batches of SCCore-GEP, remove
+#           duplicated bootstrap repetitions, compute the median and 95% CI of
+#           the .632+ performance estimates and merge them with the
+#           performance of the final SCCore-GEP model.
+# Author:   R. Ruiter
+# Input:    - Outer bootstrap batches (dir_results_intermediate_sccore_gep/CI/*)
+#           - Final SCCore-GEP model (coxnet_Late_feature_integration_robj.rds)
+# Output:   - corr_632plus_CI_final_all_variables.csv in
+#             dir_results_intermediate_sccore_gep: .632+ performance of
+#             SCCore-GEP with median and 95% CI per (sub)group
+# Requires: dir_results_intermediate_sccore_gep, experiment_sccore_gep (main.R)
+# Usage:    Sourced from main.R after the outer bootstrap (step 5.3)
+#===============================================================================
+
+# 1. Settings
+#-------------------------------------------------------------------------------
 conflicted::conflict_prefer("select", "dplyr")
 conflicted::conflicts_prefer(dplyr::filter)
-#---------------------------------------------------
-# 1. Load all CI batches
-#---------------------------------------------------
+#-------------------------------------------------------------------------------
 
+# 2. Load all CI batches
+#-------------------------------------------------------------------------------
 batches_list <- Sys.glob(
   file.path(dir_results_intermediate_sccore_gep, "CI/*")
 )
 
-
-# Extract model name from folder path
+#' Name of a batch, taken from its folder name
+#'
+#' @param path character. Folder path of a batch.
+#'
+#' @return character. Folder name.
 model_name <- function(path) {
   basename(normalizePath(path))
 }
@@ -52,19 +66,18 @@ names(models_list) <- map_chr(batches_list, model_name)
 models_list <- models_list[!sapply(models_list, is.null)]
 
 
-#---------------------------------------------------
-# 2. Remove potential duplicates
-#---------------------------------------------------
+#-------------------------------------------------------------------------------
+
+# 3. Remove potential duplicates
+#-------------------------------------------------------------------------------
 #
 # Each bootstrap replicate (n_rep) should only occur once
 # across all input models.
 #
 # The order of models in models_list determines which model
 # keeps a duplicated n_rep.
-#---------------------------------------------------
-
+#-------------------------------------------------------------------------------
 seen <- c()
-
 
 models_list_632plus_clean <- map(models_list, function(model) {
   
@@ -93,21 +106,19 @@ models_list_632plus_clean <- models_list_632plus_clean[
   !sapply(models_list_632plus_clean, is.null)
 ]
 
+#-------------------------------------------------------------------------------
 
-#---------------------------------------------------
-# 3. combine cleaned 0.632+ outer bootstrap results
-#---------------------------------------------------
-
+# 4. Combine cleaned 0.632+ outer bootstrap results
+#-------------------------------------------------------------------------------
 combined_632plus <- bind_rows(
   models_list_632plus_clean,
   .id = "source_model"
 )
 
+#-------------------------------------------------------------------------------
 
-#---------------------------------------------------
-# 4. Calculate median and 95% CI
-#---------------------------------------------------
-
+# 5. Calculate median and 95% CI
+#-------------------------------------------------------------------------------
 bootstrap_632plus_summary <- combined_632plus %>%
   group_by(variable, group, metric) %>%
   summarise(
@@ -127,18 +138,16 @@ bootstrap_632plus_summary <- combined_632plus %>%
     .groups = "drop"
   )
 
+#-------------------------------------------------------------------------------
 
-#---------------------------------------------------
-# 5. Load whole SCCore-GEP
-#---------------------------------------------------
-
+# 6. Load whole SCCore-GEP
+#-------------------------------------------------------------------------------
 GEP23 <- readRDS(file.path(dir_results_intermediate_sccore_gep, experiment_sccore_gep, "coxnet_Late_feature_integration_robj.rds"))
 
+#-------------------------------------------------------------------------------
 
-#---------------------------------------------------
-# 6. Extract 632+ of SCCor-GEP
-#---------------------------------------------------
-
+# 7. Extract .632+ performance of SCCore-GEP
+#-------------------------------------------------------------------------------
 final_vals_632plus <- GEP23$`Optimism-Corrected0632plus` %>%
   filter(
     metric %in% c("wcind_model", "wauc_model")
@@ -150,11 +159,10 @@ final_vals_632plus <- GEP23$`Optimism-Corrected0632plus` %>%
     final_value = value
   )
 
+#-------------------------------------------------------------------------------
 
-#---------------------------------------------------
-# 7. Merge CI with SCCore-GEP
-#---------------------------------------------------
-
+# 8. Merge CI with SCCore-GEP
+#-------------------------------------------------------------------------------
 plot_df_632plus <- bootstrap_632plus_summary %>%
   filter(
     metric %in% c("wcind_model", "wauc_model")
@@ -173,9 +181,9 @@ plot_df_632plus <- bootstrap_632plus_summary %>%
     final_value
   )
 
-
 #---------------------------------------------------
-# 8. Write final CV
+
+# 9. Write final CV
 #---------------------------------------------------
 write_csv(
   plot_df_632plus,
@@ -184,5 +192,6 @@ write_csv(
     "corr_632plus_CI_final_all_variables.csv"
   )
 )
+#-------------------------------------------------------------------------------
 
 

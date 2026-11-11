@@ -1,9 +1,18 @@
+#===============================================================================
+# Aim:      Load the RNA-seq datasets (TPMs, counts, clinical data, gene
+#           annotation) into S4 data objects and save them as .rds files.
+# Contents: - DiscoveryObject / ValidationObject: S4 classes and constructors
+#           - subset_samples(): subset an object to a set of samples
+#           - load_discovery(): discovery dataset, bad QC sets removed (N = 366)
+#           - load_discovery_all(): discovery dataset, bad QC samples removed
+#             (N = 378)
+#           - load_validation_d_squame(): D-SQUAME validation dataset
+#           - load_validation_nassir(): Nassir et al. dataset
+# Usage:    Sourced from main.R; the .rds files are read by the RNA-seq,
+#           heatmap and DGEA scripts.
+#===============================================================================
 
-#-------------------------------------------------------------------------------
-# Set up
-#-------------------------------------------------------------------------------
-
-# Required libraries
+# 1. Required libraries
 #-------------------------------------------------------------------------------
 library(rtracklayer)
 library(tidyverse)
@@ -15,8 +24,7 @@ conflicts_prefer(dplyr::select)
 conflicts_prefer(dplyr::rename)
 #-------------------------------------------------------------------------------
 
-
-# Discovery set up
+# 2. Discovery data object
 #-------------------------------------------------------------------------------
 setClass(
   "DiscoveryObject",
@@ -27,6 +35,11 @@ setClass(
   )
 )
 
+#' Use the ID column as rownames (discovery data)
+#'
+#' @param df data.frame. Expression data with an ID column (gene IDs).
+#'
+#' @return data.frame with gene IDs as rownames and without the ID column.
 .fix_gene_ids <- function(df) {
   
   if (!"ID" %in% colnames(df)) {
@@ -52,12 +65,20 @@ setClass(
   df
 }
 
+#' Filter lowly expressed and non protein-coding/lncRNA genes
+#'
+#' Keeps genes with non-zero variance, log2(TPM + 1) > 1 in more than half
+#' of the samples, and biotype protein-coding or lncRNA.
+#'
+#' @param df data.frame. TPMs (genes x samples).
+#'
+#' @return Numeric matrix with the TPMs (not log-transformed) of the kept genes.
 .filter_data <- function(df){
   # Prepare TPM data
   log2tpm <- log2(df + 1)
   
   # Filtered genes
-  genes_to_keep <- readRDS(file.path("/home/cscc_project_230717/", "rruiter", "data", "genes_info.rds"))
+  genes_to_keep <- readRDS(p12_genes_to_keep)
   gene_exp_data_for_filtering <- log2tpm
   feature_exclusion_df <- data.frame("Gene_name" = rownames(gene_exp_data_for_filtering),
                                      "Zero_variance" = 0,
@@ -95,6 +116,7 @@ setClass(
   df_filt
 }
 
+# Validity checks of DiscoveryObject
 invisible(setValidity("DiscoveryObject", function(object) {
   
   seq_data <- object@sequencing_data
@@ -135,6 +157,15 @@ invisible(setValidity("DiscoveryObject", function(object) {
   TRUE
 }))
 
+#' Create a DiscoveryObject
+#'
+#' @param tpms data.frame. TPMs with an ID column (genes x samples).
+#' @param counts data.frame. Raw counts with an ID column (genes x samples).
+#' @param clinical data.frame. Clinical data, one row per sample.
+#' @param out data.frame. Gene ID to gene name mapping (gene_id, gene_name).
+#'
+#' @return DiscoveryObject with sequencing_data (tpms, counts and the
+#'   filtered tpms_filt, counts_filt), clinical and out.
 DiscoveryObject <- function(tpms, counts, clinical, out) {
   
   if (!is.data.frame(tpms))
@@ -165,7 +196,7 @@ DiscoveryObject <- function(tpms, counts, clinical, out) {
 }
 #-------------------------------------------------------------------------------
 
-# Validation set up
+# 3. Validation data object
 #-------------------------------------------------------------------------------
 setClass(
   "ValidationObject",
@@ -176,6 +207,11 @@ setClass(
   )
 )
 
+#' Use the gene_id column as rownames (validation data, nf-core output)
+#'
+#' @param df data.frame. Expression data with gene_id and gene_name columns.
+#'
+#' @return data.frame with gene IDs as rownames, without gene_id/gene_name.
 .fix_gene_ids_v2 <- function(df) {
   
   if (!"gene_id" %in% colnames(df)) {
@@ -202,6 +238,7 @@ setClass(
   df
 }
 
+# Validity checks of ValidationObject (same checks as DiscoveryObject)
 invisible(setValidity("ValidationObject", function(object) {
   
   seq_data <- object@sequencing_data
@@ -242,6 +279,14 @@ invisible(setValidity("ValidationObject", function(object) {
   TRUE
 }))
 
+#' Create a ValidationObject
+#'
+#' @param tpms data.frame. TPMs with gene_id/gene_name columns.
+#' @param counts data.frame. Raw counts with gene_id/gene_name columns.
+#' @param clinical data.frame. Clinical data, one row per sample.
+#' @param out data.frame. Gene ID to gene name mapping (gene_id, gene_name).
+#'
+#' @return ValidationObject with sequencing_data (tpms, counts), clinical and out.
 ValidationObject <- function(tpms, counts, clinical, out) {
   
   if (!is.data.frame(tpms))
@@ -264,12 +309,19 @@ ValidationObject <- function(tpms, counts, clinical, out) {
       clinical = clinical,
       out = out)
 }
-#-------------------------------------------------------------------------------
-#-------------------------------------------------------------------------------
 
 #-------------------------------------------------------------------------------
-# General functions
+
+# 4. General functions
 #-------------------------------------------------------------------------------
+#' Subset a data object to a set of samples
+#'
+#' @param obj DiscoveryObject or ValidationObject.
+#' @param samples character vector. Sample IDs to keep.
+#' @param sample_id_column character. Clinical column with the sample IDs.
+#'
+#' @return The object with clinical data, counts and tpms subset to samples.
+#'   The filtered matrices (tpms_filt, counts_filt) are not subset.
 subset_samples <- function(obj, samples, sample_id_column) {
   
   # Keep only requested samples that are present
@@ -291,21 +343,23 @@ subset_samples <- function(obj, samples, sample_id_column) {
 
 
 #-------------------------------------------------------------------------------
-# Load discovery data set
+
+# 5. Load discovery dataset (N = 366)
 #-------------------------------------------------------------------------------
+#' Load the discovery dataset after removing bad QC sets (N = 366)
+#'
+#' Removes complete case-control sets that contain a bad QC sample.
+#'
+#' @param p_tpms character. Path to the TPM file.
+#' @param p_counts character. Path to the count file.
+#' @param p_clinical character. Path to the parsed clinical data.
+#' @param p_badQC character. Path to the list of bad QC samples.
+#' @param p_gtf character. Path to the GTF annotation file.
+#' @param output_dir character. Folder where the object is saved.
+#'
+#' @return Called for its side effect: saves Discovery_data_set_N366.rds.
 load_discovery <- function(p_tpms,p_counts,p_clinical,p_badQC,p_gtf,output_dir){
-  
-  #' Load discovery data set (N=366)
-  #' 
-  #' @param p_tpms character. File location of the TPM file
-  #' @param p_counts character. File location of the count file
-  #' @param p_clinical character. File location of the clinical data (imputed)
-  #' @param p_badQC character. File location of the list with samples that have bad QC
-  #' @param p_gtf character. File location of the GTF file
-  #' 
-  #' @return object with discovery data set
-  #'  
-  
+
   print("Loading discovery data...")
   
   # Exclude patient sets with a bad QC
@@ -342,21 +396,23 @@ load_discovery <- function(p_tpms,p_counts,p_clinical,p_badQC,p_gtf,output_dir){
 
 
 #-------------------------------------------------------------------------------
-# Load discovery data set, all
+
+# 6. Load discovery dataset including samples of incomplete sets (N = 378)
 #-------------------------------------------------------------------------------
+#' Load the discovery dataset after removing bad QC samples (N = 378)
+#'
+#' Removes only the bad QC samples themselves, so their matched samples are
+#' kept (incomplete sets).
+#'
+#' @param p_tpms character. Path to the TPM file.
+#' @param p_counts character. Path to the count file.
+#' @param p_clinical character. Path to the parsed clinical data.
+#' @param p_badQC character. Path to the list of bad QC samples.
+#' @param p_gtf character. Path to the GTF annotation file.
+#' @param output_dir character. Folder where the object is saved.
+#'
+#' @return Called for its side effect: saves Discovery_data_set_N378.rds.
 load_discovery_all <- function(p_tpms,p_counts,p_clinical,p_badQC,p_gtf,output_dir){
-  
-  #' Load discovery data set (N=366)
-  #' 
-  #' @param p_tpms character. File location of the TPM file
-  #' @param p_counts character. File location of the count file
-  #' @param p_clinical character. File location of the clinical data (imputed)
-  #' @param p_badQC character. File location of the list with samples that have bad QC
-  #' @param p_gtf character. File location of the GTF file
-  #' 
-  #' @return object with discovery data set
-  #'  
-  
   print("Loading discovery data...")
   
   # Exclude patient sets with a bad QC
@@ -393,20 +449,24 @@ load_discovery_all <- function(p_tpms,p_counts,p_clinical,p_badQC,p_gtf,output_d
 
 
 #-------------------------------------------------------------------------------
-# Load validation data set
+
+# 7. Load validation datasets
 #-------------------------------------------------------------------------------
+#' Load the D-SQUAME validation dataset (N = 102)
+#'
+#' For sets with both a biopsy and an excision, only the biopsy is kept.
+#'
+#' @param p_counts character. Path to the gene counts file (tsv).
+#' @param p_tpms character. Path to the gene TPM file (tsv).
+#' @param p_clinical character. Path to the parsed clinical data.
+#' @param p_badQC character. Path to the list of bad QC samples (none in the
+#'   final dataset).
+#' @param p_gtf character. Path to the GTF annotation file.
+#' @param output_dir character. Folder where the object is saved.
+#'
+#' @return Called for its side effect: saves D_SQUAME_validation_data_set.rds.
 load_validation_d_squame <- function(p_counts,p_tpms,p_clinical,p_badQC,p_gtf,output_dir){
-  
-  #' Load validation Erasmus MC
-  #' 
-  #' @param p_counts character. File location of the TPM file
-  #' @param p_tpms character. File location of the count file
-  #' @param p_clinical character. File location of the clinical data (imputed)
-  #' @param p_badQC character. File location of the list with samples that have bad QC
-  #' @param p_gtf character. File location of the GTF file
-  #' 
-  #' @return object with D-SQUEM validation data set
-  #'  
+
   
   print("Loading validation data...")
   
@@ -462,18 +522,18 @@ load_validation_d_squame <- function(p_counts,p_tpms,p_clinical,p_badQC,p_gtf,ou
 
 
 
+#' Load the Nassir et al. validation dataset
+#'
+#' Two samples with bad QC (SRR31748002, SRR31748007) are removed.
+#'
+#' @param p_tpms character. Path to the gene TPM file (tsv).
+#' @param p_counts character. Path to the gene counts file (tsv).
+#' @param p_clinical character. Path to the clinical metadata.
+#' @param p_gtf character. Path to the GTF annotation file.
+#' @param output_dir character. Folder where the object is saved.
+#'
+#' @return Called for its side effect: saves Nassir_validation_data_set.rds.
 load_validation_nassir <- function(p_tpms,p_counts,p_clinical,p_gtf,output_dir){
-  
-  #' Load validation Nassir
-  #'   
-  #' @param p_tpms character. File location of the count file
-  #' @param p_counts character. File location of the TPM file
-  #' @param p_clinical character. File location of the clinical data (imputed)
-  #' @param p_gtf character. File location of the GTF file
-  #' 
-  #' @return object with discovery data set
-  #'  
-  
   print("Loading validation data...")
   
   # Exclude patient sets with a bad QC

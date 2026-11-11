@@ -1,3 +1,27 @@
+#===============================================================================
+# Aim:      Clinical risk stratification: EMC model linear predictor (used to
+#           compute the CP score / absolute metastasis risk) and the AJCC8 and
+#           BWH T-staging systems.
+# Contents: - predict_lp(): linear predictor of the EMC (clinico-pathological) model
+#           - ajcc_staging(): AJCC 8th edition T-stage
+#           - bwh_staging(): Brigham and Women's Hospital (BWH) T-stage
+# Usage:    Sourced by the multiple imputation and validation scripts
+#===============================================================================
+
+#' Implement linear predictor to compute absolute risk
+#'
+#' @param age vector. Vector with age (in decades)
+#' @param sex vector. Vector with gender
+#' @param n_cscc vector. Vector with the number of prior cSCCs
+#' (excluding current cSCC)
+#' @param t_location vector. Vector with the tumor location
+#' @param t_diam vector. Vector with tumor diameter (cm)
+#' @param t_involvement vector. Vector with tissue involvement
+#' @param differentiation vector. Vector with differentiation grade
+#' @param pni_or_lvi vector. Vector with presence of perineural
+#' or lymphovascular invasion
+#'
+#' @return result of linear predictor
 predict_lp <- function(age,
                        sex,
                        n_cscc,
@@ -6,21 +30,6 @@ predict_lp <- function(age,
                        t_involvement,
                        differentiation,
                        pni_or_lvi){
-  
-  #' Implement linear predictor to compute absolute risk
-  #'
-  #' @param age vector. Vector with age (in decades)
-  #' @param sex vector. Vector with gender
-  #' @param n_cscc vector. Vector with the number of prior cSCCs
-  #' (excluding current cSCC)
-  #' @param t_location vector. Vector with the tumor location
-  #' @param t_diam vector. Vector with tumor diameter (cm)
-  #' @param t_involvement vector. Vector with tissue involvement
-  #' @param differentiation vector. Vector with differentiation grade
-  #' @param pni_or_lvi vector. Vector with presence of perineural
-  #' or lymphovascular invasion
-  #' 
-  #' @return result of linear predictor
   
   # Adjust variables
   ## Sex
@@ -68,22 +77,20 @@ predict_lp <- function(age,
   
 }
 
+#' Compute AJCC staging
+#'
+#' @param t_diam vector. Vector with tumor diameter
+#' @param pni vector. Vector with PNI binary
+#' @param t_involvement vector. Vector with tissue involvement
+#' @param depth_inv vector. Vector with depth of invasion
+#' @param inv_bones vector. Vector with invasion of bones
+#'
+#' @return AJCC_staging
 ajcc_staging <- function(t_diam,
                          pni,
                          t_involvement,
                          depth_inv,
                          inv_bones){
-  #' Compute AJCC staging
-  #'
-  #' @param t_diam vector. Vector with tumor diameter
-  #' @param pni vector. Vector with PNI binary
-  #' @param t_involvement vector. Vector with tissue involvement
-  #' @param depth_inv vector. Vector with depth of invasion
-  #' @param inv_bones vector. Vector with invasion of bones
-  #'
-  #' @return AJCC_staging
-  #'
-  
   # Compute T-stages
   T1 <- ifelse(t_diam < 2 & ((pni == "No" |(pni == "Yes" & t_involvement == "Dermis")) & t_involvement != "Beyond subcutaneous fat" & depth_inv <= 6), 1, 0)
   T2 <- ifelse(t_diam >=2 & t_diam <4 & ((pni == "No"| (pni == "Yes" & t_involvement == "Dermis")) & t_involvement != "Beyond subcutaneous fat" & depth_inv <=6), 1, 0)
@@ -100,22 +107,20 @@ ajcc_staging <- function(t_diam,
   
 }
 
+#' Compute BWH staging
+#'
+#' @param t_diam vector. Tumor diameter variable
+#' @param differentiation vector. Vector with differentiation grade
+#' @param pni vector. Vector with PNI binary
+#' @param t_involvement vector. Vector with tissue involvement
+#' @param inv_bones vector. Vector with invasion of bones
+#'
+#' @return BWH staging
 bwh_staging <- function(t_diam,
                         differentiation,
                         pni,
                         t_involvement,
                         inv_bones){
-  #' Compute BWH staging
-  #'
-  #' @param t_diam vector. Tumor diameter variable
-  #' @param differentiation vector. Vector with differentiation grade
-  #' @param pni vector. Vector with PNI binary
-  #' @param t_involvement vector. Vector with tissue involvement
-  #' @param inv_bones vector. Vector with invasion of bones
-  #'
-  #' @return BWH staging
-  #'
-  
   # Compute T-stages
   hr_t_diam <- ifelse(t_diam >= 2, 1, 0)
   hr_differentiation <- ifelse(differentiation == "Poor/undifferentiated", 1, 0)

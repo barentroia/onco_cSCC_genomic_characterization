@@ -1,11 +1,18 @@
-#-------------------------------------------------------------------------------
-# Aim: Perform multiple imputation on D-SQUAME validation clinical dataset
-# Author: L.Pozza
-# Input: D-SQUAME validation clinical dataset
-# Output: Multiple imputation object and merged multiple imputed dataset
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Perform multiple imputation (mice) of missing clinical variables in
+#           the D-SQUAME validation clinical dataset.
+# Author:   L. Pozza
+# Input:    - D-SQUAME validation clinical dataset (e3_clinical)
+# Output:   Written to results_dir/intermediate/clinical/:
+#           - Missing data pattern plots (before/after variable selection)
+#           - mice logged events, convergence, density and proportion plots
+#           - Multiple imputation object (mids) as .Rdata
+#           - Merged imputed dataset (median/mode over the imputed datasets)
+# Requires: code_dir, results_dir (main.R); e3_clinical (config.R)
+# Usage:    Sourced from main.R
+#===============================================================================
 
-# Load libraries
+# 1. Load libraries
 #-------------------------------------------------------------------------------
 library(conflicted)
 library(tidyverse)
@@ -14,7 +21,7 @@ library(VIM)
 library(DescTools)
 #-------------------------------------------------------------------------------
 
-# Filenames and settings
+# 2. Filenames and settings
 #-------------------------------------------------------------------------------
 # Clinical data
 clinical_fn <- e3_clinical
@@ -23,29 +30,29 @@ output_dir <- file.path(results_dir, "intermediate", "clinical")
 if (!dir.exists(output_dir)){dir.create(output_dir, recursive = T)}
 #-------------------------------------------------------------------------------
 
-# Source functions
-#-------------------------------------------------------------------------------
+# 3. Source functions
+#------------------------------------------------------------------------------
 source(file.path(code_dir, "functions", "stagings_emcmodel_funs.R"))
 source(file.path(code_dir, "functions", "propplot_fun.R"))
 #-------------------------------------------------------------------------------
 
-# Read data and prepare output folder
+# 4. Read data and prepare output folder
 #-------------------------------------------------------------------------------
 clinical <- read.csv(clinical_fn)
 clinical <- clinical %>%
   mutate(Type_of_material_scored_bin = ifelse(Type_of_material_scored == "Biopsy", "Biopsy", "Excision"))
 #-------------------------------------------------------------------------------
 
-# Check pattern of missing data
+# 5. Check pattern of missing data
 #-------------------------------------------------------------------------------
 pdf(file.path(output_dir, paste0("multiple_imputation_missing_data_d_squame_validation.pdf")), height = 6, width = 20)
 aggr(clinical, oma = c(15,5,5,5))
 dev.off()
 #-------------------------------------------------------------------------------
 
-# Direct imputation of variables and transformation into right class
+# 6. Select imputation variables and transform them into the right class
 #-------------------------------------------------------------------------------
-# Identify variables to exclude
+# Identify variables to exclude from the imputation model (reason given per variable)
 vars_to_exclude <- c("Skyline_ID", # Not predictive
                      "Sample_id", # Not predictive
                      "Set_id", # Not predictive
@@ -119,14 +126,14 @@ clinical_sub <- clinical_sub %>%
   unique()
 #-------------------------------------------------------------------------------
 
-# Check pattern of missing data
+# 7. Check pattern of missing data in the selected variables
 #-------------------------------------------------------------------------------
 pdf(file.path(output_dir, paste0("multiple_imputation_missing_data_sel_vars_d_squame_validation.pdf")), height = 6, width = 20)
 aggr(clinical_sub, oma = c(15,5,5,5))
 dev.off()
 #-------------------------------------------------------------------------------
 
-# Multiple imputation
+# 8. Multiple imputation
 #-------------------------------------------------------------------------------
 # Initialization of multiple imputation
 ## As method, use the default options:
@@ -172,7 +179,7 @@ mimp <- mice(clinical_sub,
              print = F)
 #-------------------------------------------------------------------------------
 
-# Merge multiple imputed dataset in a single dataset
+# 9. Merge multiple imputed dataset in a single dataset
 #-------------------------------------------------------------------------------
 merged_mimp <- sjmisc::merge_imputations(complete(mimp, 0), mimp, summary = "none")
 # Adjust stagings and CP risk
@@ -186,7 +193,7 @@ merged_mimp <- merged_mimp %>%
   relocate(Patient_ID_SKY)
 #-------------------------------------------------------------------------------
 
-# Save results
+# 10. Save results
 #-------------------------------------------------------------------------------
 # Save logged events
 write.csv(mimp$loggedEvents %>% as.data.frame(),

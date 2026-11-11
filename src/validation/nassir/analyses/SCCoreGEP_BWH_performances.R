@@ -1,11 +1,20 @@
-#-------------------------------------------------------------------------------
-# Aim: Test SCCore-GEP model on Nassir et al. validation dataset
-# Author: L.Pozza, adapted from J. Traets
-# Input: D-SQUAME discovery and Nassir et al. TPM & clinical data + SCCore-GEP model
-# Output: Performance of SCCore-GEP model in Nassir et al. validation dataset
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Apply SCCore-GEP to the Nassir et al. validation dataset (after
+#           ComBat batch correction against the D-SQUAME discovery data) and
+#           compute the discrimination performances of SCCore-GEP and BWH.
+# Author:   L. Pozza, adapted from J. Traets
+# Input:    - Nassir et al. clinical data and TPMs (n3_clinical, n1_tpms)
+#           - D-SQUAME discovery imputed clinical data, TPMs and bad QC list
+#             (reference for batch correction)
+#           - Final SCCore-GEP model (coxnet_Late_feature_integration_robj.rds)
+# Output:   Written to results_dir/intermediate/validation/nassir:
+#           - SCCoreGEP_predictions.csv
+#           - SCCoreGEP_BWH_performances_max_samples.csv and _complete_cases.csv
+# Requires: code_dir, results_dir (main.R) and config.R paths
+# Usage:    Sourced from main.R
+#===============================================================================
 
-# Load libraries
+# 1. Load libraries
 #-------------------------------------------------------------------------------
 library(conflicted)
 library(openxlsx)
@@ -17,7 +26,7 @@ library(sva)
 conflicted::conflicts_prefer(dplyr::filter)
 #-------------------------------------------------------------------------------
 
-# Filenames and settings
+# 2. Filenames and settings
 #-------------------------------------------------------------------------------
 # Nassir et al. data
 ## Clinical data
@@ -46,12 +55,12 @@ output_dir <- file.path(results_dir, "intermediate", "validation", "nassir")
 if (!dir.exists(output_dir)){dir.create(output_dir, recursive = T)}
 #-------------------------------------------------------------------------------
 
-# Source functions
+# 3. Source functions
 #-------------------------------------------------------------------------------
 source(file.path(code_dir, "functions", "boot_metrics_se_ci.R"))
 #-------------------------------------------------------------------------------
 
-# Read data
+# 4. Read data
 #-------------------------------------------------------------------------------
 # Nassir et al.
 clinical_nassir <- read.csv(clinical_nassir_fn)
@@ -64,7 +73,7 @@ tpms_gep_discovery <- read.csv(tpms_gep_discovery_fn)
 sccoregep <- readRDS(sccoregep_fn)
 #-------------------------------------------------------------------------------
 
-# Preprocess Nassir et al. data
+# 5. Preprocess Nassir et al. data
 #-------------------------------------------------------------------------------
 clinical_nassir <- clinical_nassir[!(clinical_nassir$Run %in% bad_samples),]
 clinical_nassir <- clinical_nassir %>% filter(Tumor != "CTRL")
@@ -73,7 +82,7 @@ clinical_nassir[is.na(clinical_nassir$BWH),]$BWH <- "T2b"
 tpms_nassir <- tpms_nassir[,c("gene_id","gene_name",clinical_nassir$Run)]
 #-------------------------------------------------------------------------------
 
-# Preprocess GEP discovery data
+# 6. Preprocess GEP discovery data
 #-------------------------------------------------------------------------------
 clinical_gep_discovery <- clinical_gep_discovery %>%
         filter(!Set_id %in% bad_samples_gep_discovery) %>%
@@ -81,7 +90,7 @@ clinical_gep_discovery <- clinical_gep_discovery %>%
 tpms_gep_discovery <- tpms_gep_discovery %>% select(all_of(c("ID", clinical_gep_discovery$SkylineDx.ID)))
 #-------------------------------------------------------------------------------
 
-# Combine dataset and perform batch correction (combat)
+# 7. Combine dataset and perform batch correction (combat)
 #-------------------------------------------------------------------------------
 # Combine clinical and gene expression datasets
 tpms_comb <- tpms_gep_discovery %>%
@@ -101,7 +110,8 @@ clinical_comb <- rbind(clinical_gep_discovery %>%
 clinical_comb <- clinical_comb[match(colnames(tpms_comb),clinical_comb$Sample_id),]
 clinical_comb$Metastasis <- ifelse(clinical_comb$Metastasis %in% c("Case","Met"),"Case","Control")
 # Perform batch correction (combat)
-modcombat <- model.matrix(~Metastasis+BWH, data = clinical_comb)
+#modcombat <- model.matrix(~Metastasis+BWH, data = clinical_comb) # to prevent leakage
+modcombat <- NULL
 stopifnot(clinical_comb$Sample_id == colnames(logtpms_comb))
 batch <- clinical_comb$Dataset
 logtpms_comb_corrected <- ComBat(dat = logtpms_comb,
@@ -112,7 +122,7 @@ logtpms_comb_corrected <- ComBat(dat = logtpms_comb,
 logtpms_comb_corrected <- logtpms_comb_corrected[, clinical_nassir$Run]
 #-------------------------------------------------------------------------------
 
-# Test SCCore-GEP
+# 8. Test SCCore-GEP
 #-------------------------------------------------------------------------------
 # Prepare data
 ## Removing .# behind gene ids, not in feats_to_keep/x_fitted_model
@@ -143,7 +153,7 @@ model_predictions_df <- as.data.frame(sccore_gep_preds) %>%
         select(-Metastasis, -Dataset)
 #-------------------------------------------------------------------------------
 
-# Compute discrimination performances in entire dataset (complete cases and max samples)
+# 9. Compute discrimination performances in entire dataset (complete cases and max samples)
 #-------------------------------------------------------------------------------
 # For maximum samples of each model
 perf_max_samples <- model_predictions_df %>%
@@ -178,7 +188,7 @@ perf_complete_cases <- model_predictions_df %>%
         select(-auc_ci95)
 #-------------------------------------------------------------------------------
 
-# Save results
+# 10. Save results
 #-------------------------------------------------------------------------------
 write.csv(model_predictions_df %>%
               select(Sample_id, sccore_gep),

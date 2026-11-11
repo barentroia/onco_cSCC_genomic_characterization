@@ -1,5 +1,13 @@
-# Load libraries
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Differential gene expression analysis (DGEA) with DESeq2 on an
+#           RNA-seq data object created by loadData.R.
+# Contents: - dgea_deseq2(): run DESeq2, annotate and save the DEG results
+# Requires: subset_samples() (loadData.R)
+# Usage:    Sourced by src/rna_seq/analyses/DGEA_discovery.R
+#===============================================================================
+
+# 1. Load libraries
+#---------------------------------------------------------------------------------
 library(conflicted)
 library(argparser)
 library(tidyverse)
@@ -8,19 +16,28 @@ library(DESeq2)
 #library(BiocParallel)
 #-------------------------------------------------------------------------------
 
-# Functions
+# 2. Functions
 #-------------------------------------------------------------------------------
+#' Differential gene expression analysis with DESeq2
+#'
+#' Harmonizes the clinical variables, optionally subsets the samples, drops
+#' samples with missing design variables (and incomplete case-control sets
+#' when Set_id is in the design), runs DESeq2 and annotates the results with
+#' gene names and significance labels (FDR < 0.05, |log2FC| > 2).
+#'
+#' @param rnaseq_obj DiscoveryObject/ValidationObject. RNA-seq data object
+#'   with slots sequencing_data (counts_filt), clinical and out (gene map).
+#' @param design character/formula. DESeq2 design, e.g. "~ Set_id + Metastasis".
+#' @param output_folder character. Output folder; the subset is appended to
+#'   the folder name when subset != "all".
+#' @param contrast_design character vector. DESeq2 contrast: variable,
+#'   numerator level, denominator level.
+#' @param subset character. "all", or "<column>:<level>" (several levels
+#'   separated by "&") to analyse a subset of samples.
+#'
+#' @return list with the DESeq2 results object and the DESeqDataSet. The
+#'   results table (csv) and both objects (.RData) are saved in output_folder.
 dgea_deseq2 <- function(rnaseq_obj, design, output_folder,contrast_design=c("Metastasis","Case","Control"),subset="all"){
-  #' DGEA with DESeq2
-  #' 
-  #' @param rnaseq_obj object. Object with RNA sequencing data
-  #' @param design formula. Formula of the design for DESeq2
-  #' @param output_folder character. Output folder
-  #' @param contrast_design list. List with the contrasts
-  #' @param subset character. Variable in the clinical data file on which to subset the data
-  #'
-  #' @return DEG list + corresponding DESeq2 objects
-  #'  
   
   # Function
   #-----------------------------------------------------------------------------
@@ -28,7 +45,6 @@ dgea_deseq2 <- function(rnaseq_obj, design, output_folder,contrast_design=c("Met
     map_file[map_file[, id_col] == id, map_id_col]
   }
   #-----------------------------------------------------------------------------
-  
   
   # Prepare data
   #-----------------------------------------------------------------------------
@@ -64,7 +80,6 @@ dgea_deseq2 <- function(rnaseq_obj, design, output_folder,contrast_design=c("Met
     output_folder <- paste0(output_folder,"_",subset_names[[1]][1],"_",subset_names[[1]][2])
   }
   #-----------------------------------------------------------------------------
-  
   
   # Process data
   #-----------------------------------------------------------------------------
@@ -129,7 +144,7 @@ dgea_deseq2 <- function(rnaseq_obj, design, output_folder,contrast_design=c("Met
   res_df <- res %>% 
     as.data.frame() %>%
     mutate(ensg_id = rownames(.),
-           gene_name = sapply(ensg_id, map_fun, out),
+           gene_name = sapply(ensg_id, map_fun, rnaseq_obj@out),
            padj_string = ifelse(padj < alpha & abs(log2FoldChange) > 2,
                                 paste0("Adj p-value < ", alpha, " & |log2(FC)| > 2"),
                                 ifelse(padj < alpha, paste0("Adj p-value < ", alpha),

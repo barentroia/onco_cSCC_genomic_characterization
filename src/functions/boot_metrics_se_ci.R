@@ -1,19 +1,27 @@
+#===============================================================================
+# Aim:      Bootstrap standard errors and 95% confidence intervals of
+#           performance metrics and hazard ratios. When a pairing column is
+#           given, whole case-control sets are resampled (paired bootstrap).
+# Contents: - boot_hr_se_ci(): SE, 95% CI and p-value of (weighted) log HRs
+#           - boot_metrics_se_ci(): SE and 95% CI of (weighted) AUC/C-index
+# Usage:    Sourced by the performance and multivariable analysis scripts
+#===============================================================================
+
 library(boot)
 
+#' Compute standard error of log HR using bootstrap
+#'
+#' @param df dataframe. Dataframe
+#' @param outcome string. String indicating column with outcomes
+#' @param time string. String indicating column with follow-up time
+#' @param weight string. String indicating column with weights
+#' @param preds string vector. String vector indicating column with predictors to use when fitting Cox model
+#' @param pair string or NULL. String indicating column with pairing info (set IDs)
+#' @param n_boot integer. Integer indicating number of bootstrap runs
+#' @param metric string. String indicating metric to compute (whr, hr)
+#'
+#' @return standard error and 95% CI of log HR
 boot_hr_se_ci <- function(df, outcome, time, weight, preds, pair, n_boot, metric) {
-  #' Compute standard error of log HR using bootstrap
-  #'
-  #' @param df dataframe. Dataframe
-  #' @param outcome string. String indicating column with outcomes
-  #' @param time string. String indicating column with follow-up time
-  #' @param weight string. String indicating column with weights
-  #' @param preds string vector. String vector indicating column with predictors to use when fitting Cox model
-  #' @param pair string or NULL. String indicating column with pairing info (set IDs)
-  #' @param n_boot integer. Integer indicating number of bootstrap runs
-  #' @param metric string. String indicating metric to compute (whr, hr)
-  #' 
-  #' @return standard error and 95% CI of log HR
-
   # Define bootstrap function
   boot_whr <- function(d, i) {
       di <- d[i, ]
@@ -127,19 +135,19 @@ boot_hr_se_ci <- function(df, outcome, time, weight, preds, pair, n_boot, metric
   list(se = se, ci95 = ci95, ci95low = ci95low, ci95up = ci95up, avg = avg, est = est, pvalue = p_comb, boot_ests = boot_res_df)
 }
 
+#' Compute standard error of (w)Cindex/(w)AUC using bootstrap
+#'
+#' @param df dataframe. Dataframe
+#' @param score string. String indicating column with scores
+#' @param outcome string. String indicating column with outcomes
+#' @param time string. String indicating column with follow-up time
+#' @param weight string. String indicating column with weights
+#' @param pair string or NULL. String indicating column with pairing info (set IDs)
+#' @param n_boot integer. Integer indicating number of bootstrap runs
+#' @param metric string. String indicating metric to compute (wauc, wcindex, auc, cindex)
+#'
+#' @return standard error and 95% CI of (w)Cindex/(w)AUC
 boot_metrics_se_ci <- function(df, score, outcome, time, weight, pair, n_boot, metric) {
-  #' Compute standard error of (w)Cindex/(w)AUC using bootstrap
-  #'
-  #' @param df dataframe. Dataframe
-  #' @param score string. String indicating column with scores
-  #' @param outcome string. String indicating column with outcomes
-  #' @param time string. String indicating column with follow-up time
-  #' @param weight string. String indicating column with weights
-  #' @param pair string or NULL. String indicating column with pairing info (set IDs)
-  #' @param n_boot integer. Integer indicating number of bootstrap runs
-  #' @param metric string. String indicating metric to compute (wauc, wcindex, auc, cindex)
-  #' 
-  #' @return standard error and 95% CI of (w)Cindex/(w)AUC
 
   # Define bootstrap functions
   boot_wauc <- function(d, i) {

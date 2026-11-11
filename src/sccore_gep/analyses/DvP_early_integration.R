@@ -1,26 +1,33 @@
-#---------------------------------------------------
-# Aim: Prepare model development pipeline with DvP
-# non-DvP or early integration
-# Author: R.Ruiter
-# Input: Clinical dataset
-#        TPM gene expression matrix
-#        Raw count gene expression matrix
-#        Bailey DvP gene list
-#        QC exclusion list
-# Output: Bootstrap-validated prediction models for
-#        DvP
-#        Non-DvP
-#        Early integration
-#---------------------------------------------------
+#===============================================================================
+# Aim:      Develop and bootstrap-validate GEP models in the D-SQUAME discovery
+#           dataset using DvP genes only, non-DvP genes only, or all genes
+#           together (early integration), with Coxnet and Random Survival
+#           Forest models.
+# Author:   R. Ruiter
+# Input:    - Clinical, RNA-seq and QC data, loaded via Model_input_processing.R
+#           - DvP (Bailey) gene list (p6_bailey)
+# Output:   - <model>_<DvP|non_DvP|Early_integration>_robj.rds in
+#             dir_results_intermediate_sccore_gep/<experiment_sccore_gep>
+# Requires: dir_scripts_functions, dir_results_intermediate_sccore_gep,
+#           experiment_sccore_gep, results_dir (main.R) and config.R paths
+# Usage:    Sourced from main.R
+#===============================================================================
 
-
+# 1. Input parameters and helper functions
 #-------------------------------------------------------------------------------
-
-# 1. Input parameters and global functions
-#-------------------------------------------------------------------------------
-# To remove versions from genes
+#' Strip the version suffix from Ensembl gene IDs (keep first 15 characters)
+#'
+#' @param x character vector. Ensembl gene IDs, e.g. "ENSG00000141510.18".
+#'
+#' @return character vector of unversioned IDs.
 strp <- function(x) substr(x, 1, 15)
-# To subset expression matrix with genes of interest
+
+#' Subset an expression matrix to the genes of a signature
+#'
+#' @param signature_gene_ids character vector. Gene IDs of the signature.
+#' @param expression_matrix matrix/data.frame. Expression data (samples x genes).
+#'
+#' @return The expression matrix restricted to the signature genes present.
 subset_expression_matrix <- function(signature_gene_ids, expression_matrix) {
   genes_in_matrix <- intersect(signature_gene_ids, colnames(expression_matrix))
   return(expression_matrix[, genes_in_matrix, drop = FALSE])
@@ -99,8 +106,8 @@ x_data_counts_other <- as.data.frame(t(subset_expression_matrix(other_genes, t(x
 print(paste0("Early integration gene matrix: ", nrow(x_data), " samples x ", ncol(x_data), " features."))
 print(paste0("DvP gene matrix: ", nrow(x_data_bailey), " samples x ", ncol(x_data_bailey), " features."))
 print(paste0("Non-DvP gene matrix: ", nrow(x_data_other), " samples x ", ncol(x_data_other), " features."))
-
 #-------------------------------------------------------------------------------
+
 # 3. Select datasets to run
 #-------------------------------------------------------------------------------
 datasets <- list(
@@ -117,8 +124,8 @@ datasets <- list(
     counts = x_data_counts
   )
 )
-
 #-------------------------------------------------------------------------------
+
 # 4. Run workflow and save results
 #-------------------------------------------------------------------------------
 for (dataset_name in names(datasets)) {
@@ -126,8 +133,6 @@ for (dataset_name in names(datasets)) {
   # Select current dataset
   data <- datasets[[dataset_name]]$data
   counts <- datasets[[dataset_name]]$counts
-  
-  
   
   for (md in models){
     message("Running integration strategy: ", dataset_name, " on model " ,md)
@@ -155,4 +160,5 @@ for (dataset_name in names(datasets)) {
           save_model_bootstrap(
             bootstrap_results,
             paste0(md,"_",dataset_name),file.path(dir_results_intermediate_sccore_gep,  experiment_sccore_gep))
-          }}}
+      }}}
+#-------------------------------------------------------------------------------

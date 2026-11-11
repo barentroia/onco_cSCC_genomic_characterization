@@ -1,21 +1,47 @@
-#-------------------------------------------------------------------------------
-# Aim: Compute weights for patients in D-SQUAME validation dataset
-# Author: L. Pozza, functions to compute weights were coded by B. Rentroia-Pacheco
-# Input:
-# - Dataset with clinical data from the samples in D-SQUAME validation full dataset
-# - Samples IDs of samples in D-SQUAME NCC dataset
-# Output: Sampling probabilities and weights for samples in D-SQUAME validation dataset
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Compute inverse-probability sampling weights for the nested
+#           case-control (NCC) design of the D-SQUAME validation dataset.
+# Author:   L. Pozza; functions to compute weights coded by B. Rentroia Pacheco
+# Input:    - Clinical data of all records in the full D-SQUAME validation
+#             cohort (full_dataset_WP3_v2.csv)
+#           - Sample IDs of the D-SQUAME validation NCC dataset
+# Output:   Written to output_dir:
+#           - WC_LR_allcontrols_valset.csv: sampling probabilities/weights of
+#             all controls in the full cohort
+#           - WC_LR_NCC_cohort_valset(_noADMIN).csv: weights of the cases and
+#             controls in the NCC dataset (with/without administration numbers)
+# Requires: Access to the Erasmus MC project drive (W:)
+# Usage:    Run standalone (not sourced from main.R). Its output is the weight
+#           file referenced in config.R (e7_weights).
+# Notes:    Cases get weight = total cases / sampled cases; controls get
+#           weights from a logistic regression on the matching variables.
+#===============================================================================
 
-# Load libraries
+# 1. Load libraries
 #-------------------------------------------------------------------------------
 library(conflicted)
 library(tidyverse)
 #-------------------------------------------------------------------------------
 
-# Functions
+# 2. Functions
 #-------------------------------------------------------------------------------
-# Sampling probability based on all records
+
+#' Compute control sampling probabilities and weights based on all records
+#'
+#' Fits a logistic regression of the sampling indicator on the matching
+#' variables for every control record, aggregates record-level probabilities
+#' per patient (P(patient sampled) = 1 - prod(1 - p_record)) and returns
+#' inverse-probability weights rescaled to the number of patients.
+#'
+#' @param df_all_records_controls data.frame. All control records, with
+#'   `administratienummer` (patient), `Sampled` and the matching variables.
+#' @param sampled_records_bin numeric vector. 1 if the record was sampled in
+#'   the NCC dataset, 0 otherwise.
+#' @param matching_vars character vector. Columns used as predictors of the
+#'   sampling probability.
+#'
+#' @return data.frame with one row per patient: administratienummer,
+#'   Samp_prob, Weight and Weight_rescaled.
 compute_sampling_prob_based_on_all_records <- function(df_all_records_controls, sampled_records_bin, matching_vars = c("Vitfup2023", "Type_of_material1")){
   # Logistic regression to model sampling probability of each record
   fit <- glm(sampled_records_bin~., family = "binomial", data = df_all_records_controls[, matching_vars])
@@ -43,7 +69,7 @@ compute_sampling_prob_based_on_all_records <- function(df_all_records_controls, 
 }
 #-------------------------------------------------------------------------------
 
-# Filenames and settings
+# 3. Filenames and settings
 #-------------------------------------------------------------------------------
 # Project directory
 project_dir <- file.path("W:", "Data", "ONDERZOEK", "Studies", "2021",
@@ -57,12 +83,12 @@ full_ds_fn <- file.path(project_dir, "full_dataset_WP3_v2.csv")
 ncc_ds_fn <- file.path(project_dir, "fromSkyline", "parsed_clinical_data_v3lp_valset_complete_sets_red.csv")
 #-------------------------------------------------------------------------------
 
-# Create output directories
+# 4. Create output directories
 #-------------------------------------------------------------------------------
 if (!dir.exists(output_dir)){dir.create(output_dir, recursive = T)}
 #-------------------------------------------------------------------------------
 
-# Read data
+# 5. Read data
 #-------------------------------------------------------------------------------
 full_ds <- read.csv(full_ds_fn) %>% select(-X)
 ncc_ds <- read.csv(ncc_ds_fn)
@@ -77,7 +103,7 @@ ncc_ds_f <- ncc_ds %>%
 print(paste0("There are ", nrow(ncc_ds_f), " patients and samples."))
 #-------------------------------------------------------------------------------
 
-# First checks and separate cases and controls
+# 6. First checks and separate cases and controls
 #-------------------------------------------------------------------------------
 # Check that all samples in the NCC dataset are in the full dataset
 samples_ncc_not_in_full <- setdiff(ncc_ds_f$Sample_id, full_ds$Sample_id)
@@ -120,7 +146,7 @@ if (length(controls_not_in_ncc) > 0){
 }
 #-------------------------------------------------------------------------------
 
-# Preprocess cases dataset and perform some checks
+# 7. Preprocess cases dataset and perform some checks
 #-------------------------------------------------------------------------------
 # Check that information is complete
 pats_cases_wo_fu_or_sid <- cases_ds %>%
@@ -144,7 +170,7 @@ if (length(pats_cases_wo_fu_or_sid) > 0){
 cases_ds_f <- cases_ds %>%
   dplyr::filter(metastasis_case == 1)
 # There are multiple samples per tumor, due to different procedures.
-# Sample type is chosen taking into account the following priority: 
+# Sample type is chosen taking into account the following priority:
 # Excision/Reexcision/Resectie > Mohs > Biopsy
 # In case of multiple entries with same sample type, the first one will be kept (based on palgaexcerptid).
 ## Check annotation of sample type
@@ -196,7 +222,7 @@ if (length(cases_not_in_ncc) > 0){
 }
 #-------------------------------------------------------------------------------
 
-# Preprocess controls dataset and perform some checks
+# 8. Preprocess controls dataset and perform some checks
 #-------------------------------------------------------------------------------
 # Remove tumors that have 0 follow-up, they are not part of the study,
 # and cannot be considered for matching
@@ -206,7 +232,7 @@ controls_ds_f <- controls_ds %>% dplyr::filter(Vitfup2023 > 0)
 # - 2. biopsy/excision entries for a same tumor
 # In the second case, for weights computation purpose we just want to keep one entry
 # as they belong to the same tumor.
-# Sample types is chose taking into account the following priority: 
+# Sample types is chose taking into account the following priority:
 # Excision/Reexcision/Resectie > Mohs > Biopsy
 # In case of multiple entries with same sample type, the first one will be kept (based on palgaexcerptid).
 ## Identify patients with multiple tumors

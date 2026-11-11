@@ -1,14 +1,28 @@
-#-------------------------------------------------------------------------------
-# Aim: Compute weights for development and evaluation of gene expression models
-# Author: B. Rentoia Pacheco, based also on code of Lara Pozza, Joleen Traets
-# Input:
-# - Dataset with clinical data from the samples in WP2 cohort
-# - Patients and set IDs of samples with bad RNA-seq QCs
-# Output: Sampling probabilities for controls in WP2 cohort, in different settings and corresponding weights
-#-------------------------------------------------------------------------------
+#===============================================================================
+# Aim:      Compute inverse-probability sampling weights for the nested
+#           case-control (NCC) design of the D-SQUAME discovery dataset, used
+#           to develop and evaluate the gene expression models.
+# Author:   B. Rentroia Pacheco, based also on code of L. Pozza and J. Traets
+# Input:    - Clinical data of all pathology records of the full cohort (WP2)
+#           - Patient and set IDs of samples with bad RNA-seq QC
+#           - IDs of the samples in the 390-sample NCC cohort
+# Output:   - Sampling probabilities and weights of all controls
+#             (WC_01_<method>_all_controls_samp_prob_weights<n>.csv)
+#           - Weights of the NCC cohort, with and without administration
+#             numbers (WC_01_<method>_samp_prob_weights<n>_NCC_cohort*.csv),
+#             for n = 183 (bad QC pairs removed) and n = 195 (all pairs)
+# Requires: Access to the Erasmus MC project drive (W:) and the preprocessing
+#           script WC_00_wp2_preprocessing_weights_computation.R, which defines
+#           wp2_dataset_sample_info, wp2_dataset_tumors_info,
+#           ds_potential_controls_0709, compute_CP_BWH() and weight_method.
+# Usage:    Run standalone (not sourced from main.R). Its output files are the
+#           weight files referenced in config.R (p10_weights, p11_weights_unmatched).
+# Notes:    Uses patient identifiers from the cancer registry that cannot be
+#           shared publicly; included for transparency only.
+#===============================================================================
 
-# 0. Setup
-#--------------------
+# 1. Setup: libraries and directories
+#-------------------------------------------------------------------------------
 library(openxlsx)
 library(dplyr)
 library(tidyr)
@@ -26,9 +40,10 @@ dir_results =  file.path(dir_project_WP2, "2-Data", "Intermediate datafiles",
                          "WP2 clinical data", "Weight computation",
                          "09_final_weights_september_2025")
 if (!dir.exists(dir_results)){dir.create(dir_results, recursive = T)}
+#-------------------------------------------------------------------------------
 
-# 1. Load required datasets
-#--------------------
+# 2. Load required datasets
+#-------------------------------------------------------------------------------
 # File with IDs of samples having bad RNA-seq QCs
 samples_bad_rnaseq_qcs_fn <- file.path(dir_project_WP2, "2-Data", "Intermediate datafiles",
                                        "WP2 clinical data", "Sent to SkylineDx",
@@ -50,11 +65,14 @@ ncc_390_ids_fn <- file.path(dir_project_WP2, "2-Data", "Intermediate datafiles",
 mapping <- read.xlsx(mapping_fn, sheet = "Samples")
 # File with IDs of samples in 390 NCC cohort
 ncc_390_ids <- read.csv(ncc_390_ids_fn)
-
-# 2. Preprocessing that accounts for the fact that samples with bad QC were not sampled and computes CP risk for all pathology records in the nationwide database:
-#----------------------------------------
-# This code links databases to obtain the full cohort of 19,120 patients, it uses the entire database and contains IDs from the cancer registry that cannot be made publicly available
-# The code produces the dataframes: wp2_dataset_sample_info and ds_potential_controls_0709
+#-------------------------------------------------------------------------------
+# 3. Preprocessing: mark bad QC samples as not sampled and compute CP risk for
+#    all pathology records in the nationwide database
+#-------------------------------------------------------------------------------
+# The sourced script links databases to obtain the full cohort of 19,120
+# patients. It uses the entire database and contains IDs from the cancer
+# registry that cannot be made publicly available.
+# It produces the data frames wp2_dataset_sample_info and ds_potential_controls_0709.
 source(file.path(dir_project_WP2, "2-Data", "Intermediate datafiles","WP2 clinical data","Script","ncc_weights","WC_00_wp2_preprocessing_weights_computation.R"))
 
 # Pairs with bad RNA-seq QCs are not included in the final NCC cohort,
@@ -81,12 +99,25 @@ sim_imp_records_0709_removed_bad_rnaseq_qcs = ds_potential_controls_0709_removed
          Type_of_material = replace_na(Type_of_material,"Excision/Reexcision/Resectie")) %>%as.data.frame()
 cp_risk = compute_CP_BWH(sim_imp_records_0709_removed_bad_rnaseq_qcs)$Met_risk
 sim_imp_records_0709_removed_bad_rnaseq_qcs$CP_risk = cp_risk*100 # Note: this step modifies 12 records/5328, in which the CP risk of the biopsy and the excision were different and the other CP risk was chosen. I decided to keep it this way, because in theory it could also have happened to records in which the CP risk score was missing both in the biopsy and the excision. Therefore, the CP risk score is obtained in the same way for all records.
+#-------------------------------------------------------------------------------
 
+# 4. Functions for weight computation
+#-------------------------------------------------------------------------------
 
-# 3. Weight computation
-#----------------------------------------
-# 3.1: Functions to compute different sets of weights:
-# Sampling probability based on all records:
+#' Compute control sampling probabilities and weights based on all records
+#'
+#' Fits a logistic regression of the sampling indicator on the matching and
+#' clinico-pathological variables for every record, aggregates record-level
+#' probabilities per patient (P(patient sampled) = 1 - prod(1 - p_record)) and
+#' returns inverse-probability weights rescaled to the number of patients.
+#'
+#' @param df_all_records data.frame. All control records, one row per record,
+#'   with an `administratienummer` (patient) column and a `Sampled` column.
+#' @param sampled_records_bin numeric vector. 1 if the record was sampled in
+#'   the NCC cohort, 0 otherwise.
+#'
+#' @return data.frame with one row per patient: administratienummer,
+#'   Samp_prob_patient, Weight, Weight_rescaled and Metastasis (= 0).
 compute_sampling_prob_based_on_all_records = function(df_all_records,sampled_records_bin){
   # Logistic regression to model sampling probability of each record:
   fit = glm(sampled_records_bin~.,family="binomial",data=df_all_records[,c("FU_metastasis_years","Sex","Age","Tumor_location_cats","Differentiation","Tumor_diameter","Tissue_involvement","PNI_or_LVI","Number_of_cSCC_before_culprit","Type_of_material")])
@@ -96,7 +127,8 @@ compute_sampling_prob_based_on_all_records = function(df_all_records,sampled_rec
   
   df_predictions = data.frame("administratienummer"= df_all_records$administratienummer,"Samp_prob"= rec_sampling_probs)
   
-  # Aggregate sampling probabilities per patient:
+  # Aggregate sampling probabilities per patient. The (1 - x) trick is applied
+  # to the whole data frame, so administratienummer is flipped back afterwards:
   df_predictions_per_patient = (1-df_predictions) %>% group_by(administratienummer)%>%
     summarise(Samp_prob_patient = 1-prod(Samp_prob))%>%
     ungroup() %>%
@@ -111,11 +143,16 @@ compute_sampling_prob_based_on_all_records = function(df_all_records,sampled_rec
   df_predictions_per_patient$Metastasis = 0
   return(df_predictions_per_patient)
 }
+#-------------------------------------------------------------------------------
 
-# 3.2 Compute weights:
-#----------------------------------------
-# Define full cohort and sampled cases:
-# Full Cohort:
+# 5. Compute weights
+#-------------------------------------------------------------------------------
+# Weights are computed for two versions of the NCC cohort:
+# - 183 sets: pairs with bad RNA-seq QC removed (used for SCCore-GEP development)
+# - 195 sets: all pairs (used for the unmatched integration analyses)
+# Cases get a constant weight total_events / n_events (305 cases in the full cohort).
+
+# Full control cohort
 df_all_records_full_control_cohort = sim_imp_records_0709_removed_bad_rnaseq_qcs
 
 # Cases info:
@@ -140,16 +177,15 @@ for(n_events in c(183,195)){
   # Build dataframe for cases:
   df_weights_cases = data.frame("administratienummer"=df_cases$administratienummer,"Samp_prob_patient"=n_events/total_events,"Weight"= total_events/n_events,"Weight_rescaled"= total_events/n_events,"Metastasis"=1)
   
-  # Controls: 
-  #Sampling probabilities of Controls:
-  
+  # Sampling probabilities and weights of the controls
   df_sampling_probs = compute_sampling_prob_based_on_all_records(df_all_records_full_control_cohort,df_all_records_full_control_cohort$Sampled)
   
   
   # Save them (all controls):
   write.csv(df_sampling_probs,file.path(dir_results,paste0("WC_01_",weight_method,"_all_controls_samp_prob_weights",n_events,".csv")), row.names = F)
   
-  # Save the probabilities of cSCCs in the NCC cohort only:
+  # Save the weights of the NCC cohort only (sampled controls + cases), linked
+  # to the patient and SkylineDx IDs:
   ncc_cohort_weights = rbind(df_sampling_probs[df_sampling_probs$administratienummer%in%admin_ncc_controls,],df_weights_cases)
   ncc_cohort_weights = merge(ncc_cohort_weights ,wp2_dataset_sample_info[,c("administratienummer","Patient_ID_SKY")],by="administratienummer",all.x=TRUE)
   ncc_cohort_weights = ncc_cohort_weights[!duplicated(ncc_cohort_weights$administratienummer),]

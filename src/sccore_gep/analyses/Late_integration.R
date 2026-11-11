@@ -1,30 +1,48 @@
-#---------------------------------------------------
-# Aim: Prepare model development pipeline with
-# late prediction integration and late feature integration
-# Author: R.Ruiter
-# Input: Clinical dataset
-#        TPM gene expression matrix
-#        Raw count gene expression matrix
-#        Bailey DvP gene list
-#        QC exclusion list
-# Output: Bootstrap-validated prediction models for
-#        Late prediction integration
-#        Late feature integration (SCCore-GEP)
-#---------------------------------------------------
+#===============================================================================
+# Aim:      Develop and bootstrap-validate GEP models in the D-SQUAME discovery
+#           dataset with late feature integration (SCCore-GEP: DvP and non-DvP
+#           genes selected separately, then combined) and late prediction
+#           integration (DvP and non-DvP model predictions stacked), with
+#           Coxnet and Random Survival Forest models.
+# Author:   R. Ruiter
+# Input:    - Clinical, RNA-seq and QC data, loaded via Model_input_processing.R
+#           - DvP (Bailey) gene list (p6_bailey)
+# Output:   In dir_results_intermediate_sccore_gep/<experiment>:
+#           - <model>_Late_feature_integration_robj.rds
+#           - <model>_Late_prediction_integration_robj.rds
+#           With an outer bootstrap batch (CI/<i>): only the Coxnet late feature
+#           integration model (SCCore-GEP), with .632+ estimates for CIs.
+# Requires: When sourced: dir_scripts_sccore_gep, dir_scripts_functions,
+#           dir_results_intermediate_sccore_gep, experiment_sccore_gep,
+#           results_dir and config.R paths (main.R)
+# Usage:    Sourced from main.R (no outer bootstrap), or run with Rscript and
+#           command-line arguments: outer bootstrap batch end i (runs outer
+#           repetitions i-9 to i) followed by the directories and file paths
+#           listed below (see main.R step 5.3).
+#===============================================================================
 
+# 1. Input parameters and helper functions
 #-------------------------------------------------------------------------------
-
-# 1. Input parameters and global functions
-#-------------------------------------------------------------------------------
-
+#' Strip the version suffix from Ensembl gene IDs (keep first 15 characters)
+#'
+#' @param x character vector. Ensembl gene IDs, e.g. "ENSG00000141510.18".
+#'
+#' @return character vector of unversioned IDs.
 strp <- function(x) substr(x, 1, 15)
-# Helper function to subset gene expression matrix for a given signature
+
+#' Subset an expression matrix to the genes of a signature
+#'
+#' @param signature_gene_ids character vector. Gene IDs of the signature.
+#' @param expression_matrix matrix/data.frame. Expression data (samples x genes).
+#'
+#' @return The expression matrix restricted to the signature genes present.
 subset_expression_matrix <- function(signature_gene_ids, expression_matrix) {
   genes_in_matrix <- intersect(signature_gene_ids, colnames(expression_matrix))
   return(expression_matrix[, genes_in_matrix, drop = FALSE])
 }
 
-## Number of outer bootstrap repetitions if not NULL
+# Command-line arguments (only when run with Rscript for the outer bootstrap);
+# the first argument is the last outer bootstrap repetition of this batch
 args <- commandArgs(trailingOnly = TRUE)
 
 if (length(args) == 0) {
@@ -53,14 +71,13 @@ if (length(args) == 0) {
 outer_breps <- outer
 
 
-# Experiment name
+# Experiment name: results of outer bootstrap batches go to CI/<outer>
 if (is.null(outer_breps)) {
 experiment_outer <- experiment_sccore_gep
 }else{
   experiment_outer <- paste0("CI/",outer)
 }
 # Directory where results will be stored (might need to be created)
-
 if (!dir.exists(file.path(dir_results_intermediate_sccore_gep,  experiment_outer))){
   dir.create(file.path(dir_results_intermediate_sccore_gep,  experiment_outer), recursive = T)}
 
@@ -140,18 +157,16 @@ if (is.null(outer_breps)){
          combi_type = "stackedGEP"))
 }
 
-
 #-------------------------------------------------------------------------------
 
 # 2. Source file with experiment set-up
 #-------------------------------------------------------------------------------
 source(file.path(dir_scripts_functions, "Model_input_processing.R"))
 
-# Subset TPM and counts data to only have relevant genes
-# Create expression matrices for all the required signatures
+# Remove the version suffix of the gene IDs
 colnames(x_data) <- strp(colnames(x_data))
 rownames(x_data_counts) <- strp(rownames(x_data_counts))
-# Get DvP and non-DvP
+# Split the expression and count data into DvP (Bailey) genes and all other genes
 x_data_bailey <- subset_expression_matrix(bailey_gene_ids$ensembl_gene_id, x_data)
 x_data_counts_bailey <- as.data.frame(t(subset_expression_matrix(bailey_gene_ids$ensembl_gene_id, t(x_data_counts))))
 other_genes <- setdiff(colnames(x_data), bailey_gene_ids$ensembl_gene_id)
@@ -169,10 +184,9 @@ print(paste0("Non-Bailey gene matrix: ", nrow(x_data_other), " samples x ", ncol
 }
 gene_base <- gsub("\\..*", "", colnames(x_data))
 
-
 #-------------------------------------------------------------------------------
 
-# 5. Run workflow and save results
+# 3. Run workflow and save results
 #-------------------------------------------------------------------------------
 for (md in models){
     for (models_params in models_params_list){
@@ -190,6 +204,7 @@ for (md in models){
         "Late_prediction_integration"
       )
       print(paste0("Training: ", md, " - ",integration_name ))
+      models_params$seed_build_model <- FALSE
       bootstrap_results <- bootstrap_validation(feat_sel_method = fselection,
                                                 topfeats = NA,
                                                 model_method = md,
@@ -216,3 +231,4 @@ for (md in models){
       )
     }
   }
+#-------------------------------------------------------------------------------
