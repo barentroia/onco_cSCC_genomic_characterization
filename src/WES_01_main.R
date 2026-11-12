@@ -158,12 +158,12 @@ if(exclusion_callable_coverage & rescued_mutations){
   print("Revision missing")
 }
 
-# Copy number alterations:
+# Copy number alterations (Fig.1C,SFig.2, :
 dir_results_script = file.path(dir_results,"04_CNV")
 dir.create(dir_results_script)
 source(file.path(dir_scripts,"wes","04_02_02_CNV.R")) 
 
-# Tileplot:
+# Tileplot (Fig.2, S4):
 # Add copy number alterations to the sample summary:
 copy_number_data_tileplot = read.xlsx(file.path(dir_results_script,"cns","All_CC_but_tcel_0","S04_02_02_bin_matrix_cnv_armlevel_0.1.xlsx"))
 dir_results_script = file.path(dir_results,"05_Tileplot")
@@ -172,25 +172,25 @@ dir_results_script = file.path(dir_results,"05_Tileplot",IS_classification)
 dir.create(dir_results_script)
 source(file.path(dir_scripts,"wes","04_02_03_Tileplot.R")) 
 
-# Forest plots:
+# Forest plots (Fig. 3A-C):
 dir_results_script = file.path(dir_results,"06_Forest_plots")
 dir.create(dir_results_script)
 # Driver genes and copy number forest plots:
 source(file.path(dir_scripts,"wes","04_02_03_Driver_mutations_differences.R"))
-# Supplementary Figure: IS patients:
+# Forest plots for IS patients (Fig. S6):
 source(file.path(dir_scripts,"wes","04_02_04_Forest_plots_IS.R"))
 
 # Co-occurence analysis: 
 dir_results_script = file.path(dir_results,"05_Tileplot",IS_classification)
 source(file.path(dir_scripts,"wes","04_02_03_Co_occurrence_analysis.R")) 
 
-# Analysis of all alterations together:
+# Analysis of all alterations together in a model (Fig.3D, S5):
 dir_results_script = file.path(dir_results,"07_Bootstrapping")
 dir.create(dir_results_script)
 recompute_BS = FALSE
 source(file.path(dir_scripts,"wes","04_03_02_Bootstrapping.R")) 
 
-# Integrate driver mutations with genomic clusters:
+# Integrate driver mutations with genomic clusters (Fig.4A):
 dir_results_script = file.path(dir_results,"08_RNAseq_integration")
 dir.create(dir_results_script)
 source(file.path(dir_scripts,"wes","04_04_Integration.R"))
