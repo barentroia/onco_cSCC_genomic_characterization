@@ -15,16 +15,26 @@ git clone https://github.com/barentroia/onco_cSCC_genomic_characterization.git
 cd onco_cSCC_genomic_characterization
 ```
 
-## Usage
-
-Example:
+## Regenerate publication figures
 
 ```r
-# Run WES analyses
+# Run WES analyses:
 source("WES_01_main.R")
 # Run RNA-seq and SCCore-GEP analyses:
 source("RNASeq_01_main.R")
 ```
+## Applying SCCore-GEP to an external cohort
+
+To run the SCCore-GEP model on the Nassir cohort, or on another external cohort, use the Quarto tutorial:
+
+```bash
+quarto render tutorial/Tutorial.qmd
+
+
+You can also open `tutorial/Tutorial.qmd` in RStudio and click **Render**.
+To use your own cohort, edit the input file and cohort name at the top of the notebook.
+```
+
 ## Structure and scripts description
 ```
 |
